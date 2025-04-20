@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    paths:
+      - '**.go'
+      - go.mod
+      - go.sum
+      - Dockerfile
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+    env:
+      BIN_NAME: plex-clean
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: |
+          ext=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+            -trimpath -o ${BIN_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}$ext
+
+      - name: Install UPX
+        run: sudo apt-get update && sudo apt-get install -y upx
+
+      - name: Compress binary with UPX
+        run: |
+          BINARY="${BIN_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}$ext"
+          if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
+            echo "Skipping UPX compression for Windows ARM64 as it's not supported"
+          else
+            echo "Attempting to compress $BINARY with UPX..."
+            upx --best --lzma "$BINARY" || echo "UPX compression failed for $BINARY, continuing with uncompressed binary"
+          fi
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plex-clean-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: plex-clean-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  finalize:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist
+
+      - name: Create binaries directory and move all binaries there
+        run: |
+          mkdir -p ./dist/binaries
+          find ./dist -mindepth 2 -type f -name "plex-clean-*" -exec mv {} ./dist/binaries/ \;
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: |
+            Automated release of version ${{ github.ref_name }}.
+          artifacts: ./dist/binaries/*
+          replacesArtifacts: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log into Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            mallox/plex-clean:latest
+            mallox/plex-clean:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

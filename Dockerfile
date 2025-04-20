@@ -1,19 +1,16 @@
-FROM node:18-alpine
+# Build stage
+FROM golang:1.24-alpine AS builder
 
-WORKDIR /work
+WORKDIR /app
+COPY go.mod *.go ./
+RUN apk add --no-cache upx
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -trimpath -a -installsuffix cgo -o plex-clean . && \
+    upx --best --lzma plex-clean || echo "UPX compression failed, continuing with uncompressed binary"
 
-COPY package.json clean.js ./
-
-RUN npm install
-
-# Specify the port on which the webhook is going to be listening
-ENV PORT=3333
-# Specify how much of the episode needs to have been watched to create the file. Float between 0 - 100 should be okay.
-ENV THRESHOLD=97
-# Specify a second (independant) trigger if we stopped watching with less than x minutes left
-ENV TIMELEFT=120
-
-CMD ["node", "."]
-
-# The folder where output files will be written to
+# Final stage - using scratch (empty) image instead of alpine
+FROM scratch
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+WORKDIR /app
+COPY --from=builder /app/plex-clean .
 VOLUME /output
+CMD ["/app/plex-clean"]

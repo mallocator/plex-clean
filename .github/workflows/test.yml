@@ -1,0 +1,29 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - go.mod
+      - go.sum
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - go.mod
+      - go.sum
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test -v ./...
