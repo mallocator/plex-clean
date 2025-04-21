@@ -100,8 +100,8 @@ func TestFetchMetadata(t *testing.T) {
 		response.Response.Data.Data = []MediaData{
 			{
 				FullTitle:        "Test Show - Test Episode",
-				ParentMediaIndex: 1,
-				MediaIndex:       2,
+				ParentMediaIndex: json.Number("1"), // Fixed to use json.Number
+				MediaIndex:       json.Number("2"), // Fixed to use json.Number
 				WatchedStatus:    1.0,
 				PercentComplete:  98,
 			},
@@ -169,9 +169,9 @@ func TestWebhookHandler(t *testing.T) {
 		response.Response.Data.Data = []MediaData{
 			{
 				FullTitle:        "Test Show",
-				ParentMediaIndex: 1,
-				MediaIndex:       2,
-				WatchedStatus:    1.0, // Marked as watched
+				ParentMediaIndex: json.Number("1"), // Fixed to use json.Number
+				MediaIndex:       json.Number("2"), // Fixed to use json.Number
+				WatchedStatus:    1.0,              // Marked as watched
 				PercentComplete:  98,
 			},
 		}
@@ -256,7 +256,17 @@ func TestWebhookHandler(t *testing.T) {
 		// Process media data
 		for _, data := range mediaData {
 			if data.WatchedStatus >= 1.0 {
-				filename := fmt.Sprintf("%s - S%dE%d.json", data.FullTitle, data.ParentMediaIndex, data.MediaIndex)
+				// Convert ParentMediaIndex and MediaIndex to integers
+				parentMediaIndex, err := data.ParentMediaIndex.Int64()
+				if err != nil {
+					t.Fatalf("Error converting ParentMediaIndex to int: %v", err)
+				}
+				mediaIndex, err := data.MediaIndex.Int64()
+				if err != nil {
+					t.Fatalf("Error converting MediaIndex to int: %v", err)
+				}
+
+				filename := fmt.Sprintf("%s - S%dE%d.json", data.FullTitle, parentMediaIndex, mediaIndex)
 
 				// Create the output directory if it doesn't exist
 				if err := os.MkdirAll(config.OutputDir, 0755); err != nil {

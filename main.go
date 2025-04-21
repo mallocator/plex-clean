@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // Config holds the application configuration
@@ -39,11 +40,11 @@ type TautulliResponse struct {
 
 // MediaData represents the media data from Tautulli
 type MediaData struct {
-	FullTitle        string  `json:"full_title"`
-	ParentMediaIndex int     `json:"parent_media_index"`
-	MediaIndex       int     `json:"media_index"`
-	WatchedStatus    float64 `json:"watched_status"`
-	PercentComplete  int     `json:"percent_complete"`
+	FullTitle        string      `json:"full_title"`
+	ParentMediaIndex json.Number `json:"parent_media_index"`
+	MediaIndex       json.Number `json:"media_index"`
+	WatchedStatus    float64     `json:"watched_status"`
+	PercentComplete  int         `json:"percent_complete"`
 }
 
 func main() {
@@ -116,9 +117,8 @@ func main() {
 		}
 
 		if len(mediaData) == 0 {
-			log.Printf("No entries found in Tautulli for metadata key: %s - This is normal for newly added content", payload.Metadata.Key)
 			if config.Debug {
-				log.Printf("Make sure Tautulli is properly configured and the content has been played at least once")
+				log.Printf("No entries found in Tautulli for metadata key: %s", payload.Metadata.Key)
 			}
 			w.WriteHeader(http.StatusOK)
 			_, err = w.Write([]byte("OK"))
@@ -132,8 +132,20 @@ func main() {
 
 		// Process media data
 		for _, data := range mediaData {
+			// Convert ParentMediaIndex and MediaIndex to integers
+			parentMediaIndex, err := data.ParentMediaIndex.Int64()
+			if err != nil {
+				log.Printf("Error converting ParentMediaIndex to int: %v", err)
+				continue
+			}
+			mediaIndex, err := data.MediaIndex.Int64()
+			if err != nil {
+				log.Printf("Error converting MediaIndex to int: %v", err)
+				continue
+			}
+
 			if data.WatchedStatus >= 1.0 {
-				filename := fmt.Sprintf("%s - S%dE%d.json", data.FullTitle, data.ParentMediaIndex, data.MediaIndex)
+				filename := fmt.Sprintf("%s - S%dE%d.json", data.FullTitle, parentMediaIndex, mediaIndex)
 				log.Printf("Media marked as watched by Plex, writing to file %s", filename)
 
 				// Create the output directory if it doesn't exist
@@ -166,7 +178,7 @@ func main() {
 	})
 
 	// Start server
-	log.Printf("Server v1.2 running on port %d", config.Port)
+	log.Printf("Server running on port %d", config.Port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
 }
 
@@ -196,49 +208,13 @@ func getEnv(key, defaultValue string) string {
 	return value
 }
 
-// fetchMetadata fetches metadata from Tautulli API
 func fetchMetadata(path string, config Config) ([]MediaData, error) {
 	if path == "" {
 		return nil, nil
 	}
 
 	// Extract the key from the path
-	// The path could be in various formats, but we need to extract the numeric ID
-	// Common formats: "/library/metadata/12345", "library/metadata/12345", etc.
-	key := ""
-
-	// First try to find "/library/metadata/" pattern
-	for i := 0; i < len(path); i++ {
-		if i+18 < len(path) && path[i:i+18] == "/library/metadata/" {
-			potentialKey := path[i+18:]
-			// Check if the key is numeric
-			if _, err := strconv.Atoi(potentialKey); err == nil {
-				key = potentialKey
-				break
-			}
-		}
-	}
-
-	// If not found, try to extract just the numeric ID from the end of the path
-	if key == "" {
-		// Find the last slash and extract everything after it
-		lastSlashIndex := -1
-		for i := len(path) - 1; i >= 0; i-- {
-			if path[i] == '/' {
-				lastSlashIndex = i
-				break
-			}
-		}
-
-		if lastSlashIndex != -1 && lastSlashIndex < len(path)-1 {
-			potentialKey := path[lastSlashIndex+1:]
-			// Check if the key is numeric
-			if _, err := strconv.Atoi(potentialKey); err == nil {
-				key = potentialKey
-			}
-		}
-	}
-
+	key := extractKeyFromPath(path)
 	if key == "" {
 		if config.Debug {
 			log.Printf("Could not extract key from path: %s", path)
@@ -253,7 +229,7 @@ func fetchMetadata(path string, config Config) ([]MediaData, error) {
 	// Make the request
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error making HTTP request: %w", err)
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
@@ -261,16 +237,21 @@ func fetchMetadata(path string, config Config) ([]MediaData, error) {
 		}
 	}()
 
+	// Check for non-200 status code
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("received non-200 response: %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
+
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	// Parse the response
 	var tautulliResp TautulliResponse
 	if err := json.Unmarshal(body, &tautulliResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
 	}
 
 	// Return the data
@@ -278,4 +259,25 @@ func fetchMetadata(path string, config Config) ([]MediaData, error) {
 		return []MediaData{}, nil
 	}
 	return tautulliResp.Response.Data.Data, nil
+}
+
+func extractKeyFromPath(path string) string {
+	// Look for "/library/metadata/" and extract the numeric key
+	const prefix = "/library/metadata/"
+	if idx := strings.Index(path, prefix); idx != -1 { // Fixed to use strings.Index
+		potentialKey := path[idx+len(prefix):]
+		if _, err := strconv.Atoi(potentialKey); err == nil {
+			return potentialKey
+		}
+	}
+
+	// Fallback: extract the numeric key after the last slash
+	if lastSlashIndex := strings.LastIndex(path, "/"); lastSlashIndex != -1 { // Fixed to use strings.LastIndex
+		potentialKey := path[lastSlashIndex+1:]
+		if _, err := strconv.Atoi(potentialKey); err == nil {
+			return potentialKey
+		}
+	}
+
+	return ""
 }
