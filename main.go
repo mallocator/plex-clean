@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -248,9 +249,32 @@ func fetchMetadata(path string, config Config) ([]MediaData, error) {
 		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
+	// Preprocess the JSON to handle various edge cases in the response
+	// This is necessary because the Tautulli API sometimes returns empty strings for numeric fields,
+	// which causes the JSON unmarshaler to fail. We use regular expressions to handle different
+	// spacing patterns in the JSON and replace empty strings with appropriate values.
+	bodyStr := string(body)
+
+	// Use regular expressions to handle different spacing patterns
+	// Replace empty strings with "0" for json.Number fields
+	// The \s* in the regex matches any amount of whitespace, making it flexible with spacing
+	parentMediaIndexRegex := regexp.MustCompile(`"parent_media_index"\s*:\s*""`)
+	bodyStr = parentMediaIndexRegex.ReplaceAllString(bodyStr, `"parent_media_index":"0"`)
+
+	mediaIndexRegex := regexp.MustCompile(`"media_index"\s*:\s*""`)
+	bodyStr = mediaIndexRegex.ReplaceAllString(bodyStr, `"media_index":"0"`)
+
+	// Handle cases for float64 and int fields
+	// Empty strings in these fields would also cause unmarshaling errors
+	watchedStatusRegex := regexp.MustCompile(`"watched_status"\s*:\s*""`)
+	bodyStr = watchedStatusRegex.ReplaceAllString(bodyStr, `"watched_status":0`)
+
+	percentCompleteRegex := regexp.MustCompile(`"percent_complete"\s*:\s*""`)
+	bodyStr = percentCompleteRegex.ReplaceAllString(bodyStr, `"percent_complete":0`)
+
 	// Parse the response
 	var tautulliResp TautulliResponse
-	if err := json.Unmarshal(body, &tautulliResp); err != nil {
+	if err := json.Unmarshal([]byte(bodyStr), &tautulliResp); err != nil {
 		return nil, fmt.Errorf("error unmarshaling response: %w", err)
 	}
 

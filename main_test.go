@@ -87,24 +87,149 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestFetchMetadata(t *testing.T) {
+	// This test verifies that the fetchMetadata function correctly handles various edge cases
+	// in the JSON response from the Tautulli API, including:
+	// - Normal responses with valid numbers
+	// - Empty strings for number fields (ParentMediaIndex, MediaIndex)
+	// - Empty strings for other numeric fields (WatchedStatus, PercentComplete)
+	// - Null values in JSON fields
+	// - Missing fields in JSON response
+	// - Different spacing patterns in JSON
+	// - Malformed JSON responses
+
 	// Create a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check if the request URL contains the expected parameters
-		if !strings.Contains(r.URL.String(), "cmd=get_history") ||
-			!strings.Contains(r.URL.String(), "rating_key=12345") {
+		if !strings.Contains(r.URL.String(), "cmd=get_history") {
 			t.Errorf("Unexpected request URL: %s", r.URL.String())
 		}
 
-		// Return a mock response
+		// Return different mock responses based on the rating_key
 		response := TautulliResponse{}
-		response.Response.Data.Data = []MediaData{
-			{
-				FullTitle:        "Test Show - Test Episode",
-				ParentMediaIndex: json.Number("1"), // Fixed to use json.Number
-				MediaIndex:       json.Number("2"), // Fixed to use json.Number
-				WatchedStatus:    1.0,
-				PercentComplete:  98,
-			},
+
+		if strings.Contains(r.URL.String(), "rating_key=12345") {
+			// Normal case with valid numbers
+			response.Response.Data.Data = []MediaData{
+				{
+					FullTitle:        "Test Show - Test Episode",
+					ParentMediaIndex: json.Number("1"),
+					MediaIndex:       json.Number("2"),
+					WatchedStatus:    1.0,
+					PercentComplete:  98,
+				},
+			}
+		} else if strings.Contains(r.URL.String(), "rating_key=67890") {
+			// Case with empty strings for number fields
+			// This simulates the error case we're fixing
+
+			// We need to manually create the JSON response since our struct won't allow us to set empty strings
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"response": {
+					"data": {
+						"data": [
+							{
+								"full_title": "Test Show - Empty Numbers",
+								"parent_media_index": "",
+								"media_index": "",
+								"watched_status": 1.0,
+								"percent_complete": 98
+							}
+						]
+					}
+				}
+			}`))
+			return
+		} else if strings.Contains(r.URL.String(), "rating_key=11111") {
+			// Case with empty strings for other numeric fields (WatchedStatus, PercentComplete)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"response": {
+					"data": {
+						"data": [
+							{
+								"full_title": "Test Show - Empty Other Numbers",
+								"parent_media_index": "3",
+								"media_index": "4",
+								"watched_status": "",
+								"percent_complete": ""
+							}
+						]
+					}
+				}
+			}`))
+			return
+		} else if strings.Contains(r.URL.String(), "rating_key=22222") {
+			// Case with null values in JSON fields
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"response": {
+					"data": {
+						"data": [
+							{
+								"full_title": "Test Show - Null Values",
+								"parent_media_index": null,
+								"media_index": null,
+								"watched_status": null,
+								"percent_complete": null
+							}
+						]
+					}
+				}
+			}`))
+			return
+		} else if strings.Contains(r.URL.String(), "rating_key=33333") {
+			// Case with missing fields in JSON response
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"response": {
+					"data": {
+						"data": [
+							{
+								"full_title": "Test Show - Missing Fields"
+							}
+						]
+					}
+				}
+			}`))
+			return
+		} else if strings.Contains(r.URL.String(), "rating_key=44444") {
+			// Case with different spacing patterns in JSON
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"response": {
+					"data": {
+						"data": [
+							{
+								"full_title":"Test Show - Different Spacing",
+								"parent_media_index":"",
+								"media_index" : "",
+								"watched_status" : 1.0,
+								"percent_complete":98
+							}
+						]
+					}
+				}
+			}`))
+			return
+		} else if strings.Contains(r.URL.String(), "rating_key=55555") {
+			// Case with malformed JSON response
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"response": {
+					"data": {
+						"data": [
+							{
+								"full_title": "Test Show - Malformed JSON",
+								"parent_media_index": "5",
+								"media_index": "6",
+								"watched_status": 1.0,
+								"percent_complete": 98
+							}
+						]
+					}
+				}`)) // Missing closing brace
+			return
 		}
 
 		if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -148,6 +273,173 @@ func TestFetchMetadata(t *testing.T) {
 	if len(mediaData) != 0 {
 		t.Errorf("fetchMetadata returned %d items, expected 0", len(mediaData))
 	}
+
+	// Test with a path that would return empty strings for number fields
+	mediaData, err = fetchMetadata("/library/metadata/67890", config)
+	if err != nil {
+		t.Errorf("fetchMetadata returned error: %v", err)
+	}
+	if len(mediaData) != 1 {
+		t.Errorf("fetchMetadata returned %d items, expected 1", len(mediaData))
+	} else {
+		// Check that the empty strings were handled correctly
+		if mediaData[0].FullTitle != "Test Show - Empty Numbers" {
+			t.Errorf("mediaData[0].FullTitle = %s, expected Test Show - Empty Numbers", mediaData[0].FullTitle)
+		}
+		// The empty strings should have been converted to 0
+		parentMediaIndex, err := mediaData[0].ParentMediaIndex.Int64()
+		if err != nil {
+			t.Errorf("Error converting ParentMediaIndex to int: %v", err)
+		}
+		if parentMediaIndex != 0 {
+			t.Errorf("mediaData[0].ParentMediaIndex = %d, expected 0", parentMediaIndex)
+		}
+		mediaIndex, err := mediaData[0].MediaIndex.Int64()
+		if err != nil {
+			t.Errorf("Error converting MediaIndex to int: %v", err)
+		}
+		if mediaIndex != 0 {
+			t.Errorf("mediaData[0].MediaIndex = %d, expected 0", mediaIndex)
+		}
+	}
+
+	// Test with a path that would return empty strings for other numeric fields (WatchedStatus, PercentComplete)
+	mediaData, err = fetchMetadata("/library/metadata/11111", config)
+	if err != nil {
+		t.Errorf("fetchMetadata returned error: %v", err)
+	}
+	if len(mediaData) != 1 {
+		t.Errorf("fetchMetadata returned %d items, expected 1", len(mediaData))
+	} else {
+		// Check that the empty strings were handled correctly
+		if mediaData[0].FullTitle != "Test Show - Empty Other Numbers" {
+			t.Errorf("mediaData[0].FullTitle = %s, expected Test Show - Empty Other Numbers", mediaData[0].FullTitle)
+		}
+		// Check that the numeric fields are set correctly
+		parentMediaIndex, err := mediaData[0].ParentMediaIndex.Int64()
+		if err != nil {
+			t.Errorf("Error converting ParentMediaIndex to int: %v", err)
+		}
+		if parentMediaIndex != 3 {
+			t.Errorf("mediaData[0].ParentMediaIndex = %d, expected 3", parentMediaIndex)
+		}
+		mediaIndex, err := mediaData[0].MediaIndex.Int64()
+		if err != nil {
+			t.Errorf("Error converting MediaIndex to int: %v", err)
+		}
+		if mediaIndex != 4 {
+			t.Errorf("mediaData[0].MediaIndex = %d, expected 4", mediaIndex)
+		}
+		// Empty strings for WatchedStatus and PercentComplete should be handled by Go's default zero values
+		if mediaData[0].WatchedStatus != 0 {
+			t.Errorf("mediaData[0].WatchedStatus = %f, expected 0", mediaData[0].WatchedStatus)
+		}
+		if mediaData[0].PercentComplete != 0 {
+			t.Errorf("mediaData[0].PercentComplete = %d, expected 0", mediaData[0].PercentComplete)
+		}
+	}
+
+	// Test with a path that would return null values in JSON fields
+	mediaData, err = fetchMetadata("/library/metadata/22222", config)
+	if err != nil {
+		t.Errorf("fetchMetadata returned error: %v", err)
+	}
+	if len(mediaData) != 1 {
+		t.Errorf("fetchMetadata returned %d items, expected 1", len(mediaData))
+	} else {
+		// Check that the null values were handled correctly
+		if mediaData[0].FullTitle != "Test Show - Null Values" {
+			t.Errorf("mediaData[0].FullTitle = %s, expected Test Show - Null Values", mediaData[0].FullTitle)
+		}
+		// Null values for ParentMediaIndex and MediaIndex should be handled by json.Number
+		// For null values, the ParentMediaIndex and MediaIndex should be empty strings
+		if mediaData[0].ParentMediaIndex != "" {
+			t.Errorf("mediaData[0].ParentMediaIndex = %s, expected empty string", mediaData[0].ParentMediaIndex)
+		}
+		if mediaData[0].MediaIndex != "" {
+			t.Errorf("mediaData[0].MediaIndex = %s, expected empty string", mediaData[0].MediaIndex)
+		}
+		// Null values for WatchedStatus and PercentComplete should be handled by Go's default zero values
+		if mediaData[0].WatchedStatus != 0 {
+			t.Errorf("mediaData[0].WatchedStatus = %f, expected 0", mediaData[0].WatchedStatus)
+		}
+		if mediaData[0].PercentComplete != 0 {
+			t.Errorf("mediaData[0].PercentComplete = %d, expected 0", mediaData[0].PercentComplete)
+		}
+	}
+
+	// Test with a path that would return missing fields in JSON response
+	mediaData, err = fetchMetadata("/library/metadata/33333", config)
+	if err != nil {
+		t.Errorf("fetchMetadata returned error: %v", err)
+	}
+	if len(mediaData) != 1 {
+		t.Errorf("fetchMetadata returned %d items, expected 1", len(mediaData))
+	} else {
+		// Check that the missing fields were handled correctly
+		if mediaData[0].FullTitle != "Test Show - Missing Fields" {
+			t.Errorf("mediaData[0].FullTitle = %s, expected Test Show - Missing Fields", mediaData[0].FullTitle)
+		}
+		// Missing fields should be handled by Go's default zero values
+		if mediaData[0].ParentMediaIndex != "" {
+			t.Errorf("mediaData[0].ParentMediaIndex = %s, expected empty string", mediaData[0].ParentMediaIndex)
+		}
+		if mediaData[0].MediaIndex != "" {
+			t.Errorf("mediaData[0].MediaIndex = %s, expected empty string", mediaData[0].MediaIndex)
+		}
+		if mediaData[0].WatchedStatus != 0 {
+			t.Errorf("mediaData[0].WatchedStatus = %f, expected 0", mediaData[0].WatchedStatus)
+		}
+		if mediaData[0].PercentComplete != 0 {
+			t.Errorf("mediaData[0].PercentComplete = %d, expected 0", mediaData[0].PercentComplete)
+		}
+	}
+
+	// Test with a path that would return different spacing patterns in JSON
+	mediaData, err = fetchMetadata("/library/metadata/44444", config)
+	if err != nil {
+		t.Errorf("fetchMetadata returned error: %v", err)
+	}
+	if len(mediaData) != 1 {
+		t.Errorf("fetchMetadata returned %d items, expected 1", len(mediaData))
+	} else {
+		// Check that the different spacing patterns were handled correctly
+		if mediaData[0].FullTitle != "Test Show - Different Spacing" {
+			t.Errorf("mediaData[0].FullTitle = %s, expected Test Show - Different Spacing", mediaData[0].FullTitle)
+		}
+		// The empty strings should have been converted to 0
+		parentMediaIndex, err := mediaData[0].ParentMediaIndex.Int64()
+		if err != nil {
+			t.Errorf("Error converting ParentMediaIndex to int: %v", err)
+		}
+		if parentMediaIndex != 0 {
+			t.Errorf("mediaData[0].ParentMediaIndex = %d, expected 0", parentMediaIndex)
+		}
+		mediaIndex, err := mediaData[0].MediaIndex.Int64()
+		if err != nil {
+			t.Errorf("Error converting MediaIndex to int: %v", err)
+		}
+		if mediaIndex != 0 {
+			t.Errorf("mediaData[0].MediaIndex = %d, expected 0", mediaIndex)
+		}
+		if mediaData[0].WatchedStatus != 1.0 {
+			t.Errorf("mediaData[0].WatchedStatus = %f, expected 1.0", mediaData[0].WatchedStatus)
+		}
+		if mediaData[0].PercentComplete != 98 {
+			t.Errorf("mediaData[0].PercentComplete = %d, expected 98", mediaData[0].PercentComplete)
+		}
+	}
+
+	// Test with a path that would return malformed JSON response
+	mediaData, err = fetchMetadata("/library/metadata/55555", config)
+	if err == nil {
+		t.Errorf("fetchMetadata did not return an error for malformed JSON")
+	} else {
+		// Check that the error message contains "error unmarshaling response"
+		if !strings.Contains(err.Error(), "error unmarshaling response") {
+			t.Errorf("Expected error message to contain 'error unmarshaling response', got: %v", err)
+		}
+	}
 }
 
 func TestWebhookHandler(t *testing.T) {
@@ -169,9 +461,9 @@ func TestWebhookHandler(t *testing.T) {
 		response.Response.Data.Data = []MediaData{
 			{
 				FullTitle:        "Test Show",
-				ParentMediaIndex: json.Number("1"), // Fixed to use json.Number
-				MediaIndex:       json.Number("2"), // Fixed to use json.Number
-				WatchedStatus:    1.0,              // Marked as watched
+				ParentMediaIndex: json.Number("1"),
+				MediaIndex:       json.Number("2"),
+				WatchedStatus:    1.0, // Marked as watched
 				PercentComplete:  98,
 			},
 		}
