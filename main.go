@@ -30,6 +30,24 @@ type PlexWebhookPayload struct {
 	} `json:"Metadata"`
 }
 
+// JellyfinWebhookPayload represents the payload received from Jellyfin webhook
+type JellyfinWebhookPayload struct {
+	Event       string `json:"Event"`
+	ItemID      string `json:"ItemId"`
+	ItemType    string `json:"ItemType"`
+	MediaStatus struct {
+		PlaybackStatus     string `json:"PlaybackStatus"`
+		PositionTicks      int64  `json:"PositionTicks"`
+		IsPaused           bool   `json:"IsPaused"`
+		PlayedToCompletion bool   `json:"PlayedToCompletion"`
+	} `json:"MediaStatus"`
+	NotificationType string `json:"NotificationType"`
+	Title            string `json:"Name"`
+	SeriesName       string `json:"SeriesName"`
+	SeasonNumber     int    `json:"SeasonNumber"`
+	EpisodeNumber    int    `json:"EpisodeNumber"`
+}
+
 // TautulliResponse represents the response from Tautulli API
 type TautulliResponse struct {
 	Response struct {
@@ -52,135 +70,317 @@ func main() {
 	// Load configuration from environment variables
 	config := loadConfig()
 
-	// Create HTTP server
+	// Create HTTP server with routing
+	http.HandleFunc("/plex", func(w http.ResponseWriter, r *http.Request) {
+		handlePlexWebhook(w, r, config)
+	})
+
+	http.HandleFunc("/jellyfin", func(w http.ResponseWriter, r *http.Request) {
+		handleJellyfinWebhook(w, r, config)
+	})
+
+	// Default handler for backward compatibility
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+		// If the path is exactly "/", try to detect the webhook type from the content
+		if r.URL.Path == "/" {
+			contentType := r.Header.Get("Content-Type")
 
-		// Parse multipart form
-		err := r.ParseMultipartForm(10 << 20) // 10 MB max memory
-		if err != nil {
-			log.Printf("Error parsing multipart form: %v", err)
-			http.Error(w, "Error parsing form", http.StatusBadRequest)
-			return
-		}
-
-		// Get payload from form
-		payloadStr := r.FormValue("payload")
-		if payloadStr == "" {
-			log.Printf("No payload found in request")
-			http.Error(w, "No payload found", http.StatusBadRequest)
-			return
-		}
-
-		// Parse payload
-		var payload PlexWebhookPayload
-		if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
-			log.Printf("Error unmarshaling payload: %v", err)
-			http.Error(w, "Error parsing payload", http.StatusBadRequest)
-			return
-		}
-
-		// Check if this is a media.stop event
-		if payload.Event != "media.stop" {
-			if config.Debug {
-				log.Printf("Ignoring event: %s", payload.Event)
-			}
-			w.WriteHeader(http.StatusOK)
-			_, err = w.Write([]byte("OK"))
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-			}
-			return
-		}
-
-		// Check if metadata is present
-		if payload.Metadata.Key == "" {
-			if config.Debug {
-				log.Printf("Invalid request, No metadata found")
-			}
-			w.WriteHeader(http.StatusOK)
-			_, err = w.Write([]byte("OK"))
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-			}
-			return
-		}
-
-		// Fetch metadata from Tautulli
-		mediaData, err := fetchMetadata(payload.Metadata.Key, config)
-		if err != nil {
-			log.Printf("Error fetching metadata: %v", err)
-			http.Error(w, "Error fetching metadata", http.StatusInternalServerError)
-			return
-		}
-
-		if len(mediaData) == 0 {
-			if config.Debug {
-				log.Printf("No entries found in Tautulli for metadata key: %s", payload.Metadata.Key)
-			}
-			w.WriteHeader(http.StatusOK)
-			_, err = w.Write([]byte("OK"))
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-			}
-			return
-		} else if config.Debug {
-			log.Printf("Found %d entries for %s", len(mediaData), payload.Metadata.Key)
-		}
-
-		// Process media data
-		for _, data := range mediaData {
-			// Convert ParentMediaIndex and MediaIndex to integers
-			parentMediaIndex, err := data.ParentMediaIndex.Int64()
-			if err != nil {
-				log.Printf("Error converting ParentMediaIndex to int: %v", err)
-				continue
-			}
-			mediaIndex, err := data.MediaIndex.Int64()
-			if err != nil {
-				log.Printf("Error converting MediaIndex to int: %v", err)
-				continue
-			}
-
-			if data.WatchedStatus >= 1.0 {
-				filename := fmt.Sprintf("%s - S%dE%d.json", data.FullTitle, parentMediaIndex, mediaIndex)
-				log.Printf("Media marked as watched by Plex, writing to file %s", filename)
-
-				// Create the output directory if it doesn't exist
-				if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
-					log.Printf("Error creating output directory: %v", err)
-					continue
+			// Plex webhooks are typically sent as multipart/form-data
+			if strings.Contains(contentType, "multipart/form-data") {
+				if config.Debug {
+					log.Printf("Detected Plex webhook based on Content-Type")
 				}
-
-				// Write the data to a file
-				jsonData, err := json.MarshalIndent(data, "", "  ")
-				if err != nil {
-					log.Printf("Error marshaling JSON: %v", err)
-					continue
-				}
-
-				outputPath := filepath.Join(config.OutputDir, filename)
-				if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
-					log.Printf("Error writing file: %v", err)
-				}
-			} else if config.Debug {
-				log.Printf("Media not marked as watched by Plex, ignoring")
+				handlePlexWebhook(w, r, config)
+				return
 			}
+
+			// Jellyfin webhooks are typically sent as application/json
+			if strings.Contains(contentType, "application/json") {
+				if config.Debug {
+					log.Printf("Detected Jellyfin webhook based on Content-Type")
+				}
+				handleJellyfinWebhook(w, r, config)
+				return
+			}
+
+			// If we can't determine the type, return an error
+			log.Printf("Unable to determine webhook type from request")
+			http.Error(w, "Unable to determine webhook type", http.StatusBadRequest)
+			return
 		}
 
+		// For any other path, return 404
+		http.NotFound(w, r)
+	})
+
+	// Start server
+	log.Printf("Server running on port %d", config.Port)
+	log.Printf("Plex webhook support is enabled")
+	log.Printf("Jellyfin webhook support is enabled")
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
+}
+
+// handlePlexWebhook processes Plex webhook requests
+func handlePlexWebhook(w http.ResponseWriter, r *http.Request, config Config) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse multipart form
+	err := r.ParseMultipartForm(10 << 20) // 10 MB max memory
+	if err != nil {
+		log.Printf("Error parsing multipart form: %v", err)
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	// Get payload from form
+	payloadStr := r.FormValue("payload")
+	if payloadStr == "" {
+		log.Printf("No payload found in request")
+		http.Error(w, "No payload found", http.StatusBadRequest)
+		return
+	}
+
+	// Parse payload
+	var payload PlexWebhookPayload
+	if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
+		log.Printf("Error unmarshaling Plex payload: %v", err)
+		http.Error(w, "Error parsing payload", http.StatusBadRequest)
+		return
+	}
+
+	// Check if this is a media.stop event
+	if payload.Event != "media.stop" {
+		if config.Debug {
+			log.Printf("Ignoring Plex event: %s", payload.Event)
+		}
 		w.WriteHeader(http.StatusOK)
 		_, err = w.Write([]byte("OK"))
 		if err != nil {
 			log.Printf("Error writing response: %v", err)
 		}
-	})
+		return
+	}
 
-	// Start server
-	log.Printf("Server running on port %d", config.Port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
+	// Check if metadata is present
+	if payload.Metadata.Key == "" {
+		if config.Debug {
+			log.Printf("Invalid Plex request, No metadata found")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write([]byte("OK"))
+		if err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
+		return
+	}
+
+	// Fetch metadata from Tautulli
+	mediaData, err := fetchMetadata(payload.Metadata.Key, config)
+	if err != nil {
+		log.Printf("Error fetching metadata from Tautulli: %v", err)
+		http.Error(w, "Error fetching metadata", http.StatusInternalServerError)
+		return
+	}
+
+	if len(mediaData) == 0 {
+		if config.Debug {
+			log.Printf("No entries found in Tautulli for metadata key: %s", payload.Metadata.Key)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write([]byte("OK"))
+		if err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
+		return
+	} else if config.Debug {
+		log.Printf("Found %d entries for %s", len(mediaData), payload.Metadata.Key)
+	}
+
+	// Process media data
+	for _, data := range mediaData {
+		// Convert ParentMediaIndex and MediaIndex to integers
+		parentMediaIndex, err := data.ParentMediaIndex.Int64()
+		if err != nil {
+			log.Printf("Error converting ParentMediaIndex to int: %v", err)
+			continue
+		}
+		mediaIndex, err := data.MediaIndex.Int64()
+		if err != nil {
+			log.Printf("Error converting MediaIndex to int: %v", err)
+			continue
+		}
+
+		if data.WatchedStatus >= 1.0 {
+			filename := fmt.Sprintf("%s - S%dE%d.json", data.FullTitle, parentMediaIndex, mediaIndex)
+			log.Printf("Media marked as watched by Plex, writing to file %s", filename)
+
+			// Create the output directory if it doesn't exist
+			if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
+				log.Printf("Error creating output directory: %v", err)
+				continue
+			}
+
+			// Write the data to a file
+			jsonData, err := json.MarshalIndent(data, "", "  ")
+			if err != nil {
+				log.Printf("Error marshaling JSON: %v", err)
+				continue
+			}
+
+			outputPath := filepath.Join(config.OutputDir, filename)
+			if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
+				log.Printf("Error writing file: %v", err)
+			}
+		} else if config.Debug {
+			log.Printf("Media not marked as watched by Plex, ignoring")
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write([]byte("OK"))
+	if err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
+}
+
+// handleJellyfinWebhook processes Jellyfin webhook requests
+func handleJellyfinWebhook(w http.ResponseWriter, r *http.Request, config Config) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Read the request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error reading Jellyfin request body: %v", err)
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Printf("Error closing Jellyfin request body: %v", err)
+		}
+	}(r.Body)
+
+	// Parse the JSON payload
+	var payload JellyfinWebhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		log.Printf("Error unmarshaling Jellyfin payload: %v", err)
+		http.Error(w, "Error parsing payload", http.StatusBadRequest)
+		return
+	}
+
+	// Check if this is a playback stop event with completion
+	if payload.Event != "playback.stop" && payload.NotificationType != "PlaybackStop" {
+		if config.Debug {
+			log.Printf("Ignoring Jellyfin event: %s/%s", payload.Event, payload.NotificationType)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write([]byte("OK"))
+		if err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
+		return
+	}
+
+	// Check if the media was played to completion
+	if !payload.MediaStatus.PlayedToCompletion {
+		if config.Debug {
+			log.Printf("Jellyfin media not played to completion, ignoring")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write([]byte("OK"))
+		if err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
+		return
+	}
+
+	// For episodes, use series name, season, and episode
+	if payload.ItemType == "Episode" && payload.SeriesName != "" {
+		// Create a MediaData object to maintain consistency with Plex
+		mediaData := MediaData{
+			FullTitle:        payload.SeriesName + " - " + payload.Title,
+			ParentMediaIndex: json.Number(strconv.Itoa(payload.SeasonNumber)),
+			MediaIndex:       json.Number(strconv.Itoa(payload.EpisodeNumber)),
+			WatchedStatus:    1.0, // Marked as watched
+			PercentComplete:  100, // Assuming 100% complete
+		}
+
+		filename := fmt.Sprintf("%s - S%dE%d.json", payload.SeriesName, payload.SeasonNumber, payload.EpisodeNumber)
+		log.Printf("Media marked as watched by Jellyfin, writing to file %s", filename)
+
+		// Create the output directory if it doesn't exist
+		if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
+			log.Printf("Error creating output directory: %v", err)
+			http.Error(w, "Error creating output directory", http.StatusInternalServerError)
+			return
+		}
+
+		// Write the data to a file
+		jsonData, err := json.MarshalIndent(mediaData, "", "  ")
+		if err != nil {
+			log.Printf("Error marshaling JSON: %v", err)
+			http.Error(w, "Error marshaling JSON", http.StatusInternalServerError)
+			return
+		}
+
+		outputPath := filepath.Join(config.OutputDir, filename)
+		if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
+			log.Printf("Error writing file: %v", err)
+			http.Error(w, "Error writing file", http.StatusInternalServerError)
+			return
+		}
+	} else if payload.ItemType == "Movie" {
+		// Handle movies
+		mediaData := MediaData{
+			FullTitle:        payload.Title,
+			ParentMediaIndex: json.Number("0"), // No season for movies
+			MediaIndex:       json.Number("0"), // No episode for movies
+			WatchedStatus:    1.0,              // Marked as watched
+			PercentComplete:  100,              // Assuming 100% complete
+		}
+
+		filename := fmt.Sprintf("%s.json", payload.Title)
+		log.Printf("Movie marked as watched by Jellyfin, writing to file %s", filename)
+
+		// Create the output directory if it doesn't exist
+		if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
+			log.Printf("Error creating output directory: %v", err)
+			http.Error(w, "Error creating output directory", http.StatusInternalServerError)
+			return
+		}
+
+		// Write the data to a file
+		jsonData, err := json.MarshalIndent(mediaData, "", "  ")
+		if err != nil {
+			log.Printf("Error marshaling JSON: %v", err)
+			http.Error(w, "Error marshaling JSON", http.StatusInternalServerError)
+			return
+		}
+
+		outputPath := filepath.Join(config.OutputDir, filename)
+		if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
+			log.Printf("Error writing file: %v", err)
+			http.Error(w, "Error writing file", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if config.Debug {
+			log.Printf("Unsupported Jellyfin item type: %s", payload.ItemType)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write([]byte("OK"))
+	if err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
 }
 
 // loadConfig loads configuration from environment variables

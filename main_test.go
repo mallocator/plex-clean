@@ -442,6 +442,220 @@ func TestFetchMetadata(t *testing.T) {
 	}
 }
 
+func TestJellyfinWebhookHandler(t *testing.T) {
+	// Create a temporary directory for output
+	tempDir, err := os.MkdirTemp("", "test-jellyfin-output")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	// Set up the config
+	if err := os.Setenv("OUTPUT_DIR", tempDir); err != nil {
+		t.Fatalf("Failed to set environment variable OUTPUT_DIR: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("OUTPUT_DIR"); err != nil {
+			t.Logf("Failed to unset environment variable OUTPUT_DIR: %v", err)
+		}
+	}()
+
+	// Test cases for Jellyfin webhook
+	testCases := []struct {
+		name           string
+		payload        JellyfinWebhookPayload
+		expectedStatus int
+		expectedFile   string
+		shouldExist    bool
+	}{
+		{
+			name: "Episode played to completion",
+			payload: JellyfinWebhookPayload{
+				Event:    "playback.stop",
+				ItemID:   "12345",
+				ItemType: "Episode",
+				MediaStatus: struct {
+					PlaybackStatus     string `json:"PlaybackStatus"`
+					PositionTicks      int64  `json:"PositionTicks"`
+					IsPaused           bool   `json:"IsPaused"`
+					PlayedToCompletion bool   `json:"PlayedToCompletion"`
+				}{
+					PlaybackStatus:     "Stopped",
+					PositionTicks:      12345678,
+					IsPaused:           false,
+					PlayedToCompletion: true,
+				},
+				NotificationType: "PlaybackStop",
+				Title:            "Test Episode",
+				SeriesName:       "Test Series",
+				SeasonNumber:     1,
+				EpisodeNumber:    2,
+			},
+			expectedStatus: http.StatusOK,
+			expectedFile:   "Test Series - S1E2.json",
+			shouldExist:    true,
+		},
+		{
+			name: "Movie played to completion",
+			payload: JellyfinWebhookPayload{
+				Event:    "playback.stop",
+				ItemID:   "67890",
+				ItemType: "Movie",
+				MediaStatus: struct {
+					PlaybackStatus     string `json:"PlaybackStatus"`
+					PositionTicks      int64  `json:"PositionTicks"`
+					IsPaused           bool   `json:"IsPaused"`
+					PlayedToCompletion bool   `json:"PlayedToCompletion"`
+				}{
+					PlaybackStatus:     "Stopped",
+					PositionTicks:      12345678,
+					IsPaused:           false,
+					PlayedToCompletion: true,
+				},
+				NotificationType: "PlaybackStop",
+				Title:            "Test Movie",
+			},
+			expectedStatus: http.StatusOK,
+			expectedFile:   "Test Movie.json",
+			shouldExist:    true,
+		},
+		{
+			name: "Episode not played to completion",
+			payload: JellyfinWebhookPayload{
+				Event:    "playback.stop",
+				ItemID:   "12345",
+				ItemType: "Episode",
+				MediaStatus: struct {
+					PlaybackStatus     string `json:"PlaybackStatus"`
+					PositionTicks      int64  `json:"PositionTicks"`
+					IsPaused           bool   `json:"IsPaused"`
+					PlayedToCompletion bool   `json:"PlayedToCompletion"`
+				}{
+					PlaybackStatus:     "Stopped",
+					PositionTicks:      12345678,
+					IsPaused:           false,
+					PlayedToCompletion: false,
+				},
+				NotificationType: "PlaybackStop",
+				Title:            "Test Episode",
+				SeriesName:       "Test Series",
+				SeasonNumber:     1,
+				EpisodeNumber:    2,
+			},
+			expectedStatus: http.StatusOK,
+			expectedFile:   "Test Series - S1E2.json",
+			shouldExist:    false,
+		},
+		{
+			name: "Non-playback stop event",
+			payload: JellyfinWebhookPayload{
+				Event:    "playback.start",
+				ItemID:   "12345",
+				ItemType: "Episode",
+				MediaStatus: struct {
+					PlaybackStatus     string `json:"PlaybackStatus"`
+					PositionTicks      int64  `json:"PositionTicks"`
+					IsPaused           bool   `json:"IsPaused"`
+					PlayedToCompletion bool   `json:"PlayedToCompletion"`
+				}{
+					PlaybackStatus:     "Playing",
+					PositionTicks:      0,
+					IsPaused:           false,
+					PlayedToCompletion: false,
+				},
+				NotificationType: "PlaybackStart",
+				Title:            "Test Episode",
+				SeriesName:       "Test Series",
+				SeasonNumber:     1,
+				EpisodeNumber:    2,
+			},
+			expectedStatus: http.StatusOK,
+			expectedFile:   "Test Series - S1E2.json",
+			shouldExist:    false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Remove any existing files from previous test cases
+			files, err := os.ReadDir(tempDir)
+			if err != nil {
+				t.Fatalf("Error reading temp dir: %v", err)
+			}
+			for _, file := range files {
+				if err := os.Remove(filepath.Join(tempDir, file.Name())); err != nil {
+					t.Fatalf("Error removing file: %v", err)
+				}
+			}
+
+			// Create a request with the test payload
+			payloadBytes, err := json.Marshal(tc.payload)
+			if err != nil {
+				t.Fatalf("Error marshaling payload: %v", err)
+			}
+
+			req := httptest.NewRequest("POST", "/jellyfin", strings.NewReader(string(payloadBytes)))
+			req.Header.Set("Content-Type", "application/json")
+
+			// Create a response recorder
+			rr := httptest.NewRecorder()
+
+			// Create the handler
+			config := loadConfig()
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handleJellyfinWebhook(w, r, config)
+			})
+
+			// Serve the request
+			handler.ServeHTTP(rr, req)
+
+			// Check the response status
+			if status := rr.Code; status != tc.expectedStatus {
+				t.Errorf("handler returned wrong status code: got %v want %v", status, tc.expectedStatus)
+			}
+
+			// Check if the file exists or not as expected
+			expectedFilePath := filepath.Join(tempDir, tc.expectedFile)
+			fileExists := true
+			if _, err := os.Stat(expectedFilePath); os.IsNotExist(err) {
+				fileExists = false
+			}
+
+			if fileExists != tc.shouldExist {
+				if tc.shouldExist {
+					t.Errorf("Expected file %s to exist, but it doesn't", expectedFilePath)
+				} else {
+					t.Errorf("Expected file %s not to exist, but it does", expectedFilePath)
+				}
+			}
+
+			// If the file should exist, check its content
+			if tc.shouldExist && fileExists {
+				fileContent, err := os.ReadFile(expectedFilePath)
+				if err != nil {
+					t.Fatalf("Error reading file: %v", err)
+				}
+
+				var fileData MediaData
+				if err := json.Unmarshal(fileContent, &fileData); err != nil {
+					t.Fatalf("Error unmarshaling file content: %v", err)
+				}
+
+				if fileData.WatchedStatus < 1.0 {
+					t.Errorf("fileData.WatchedStatus = %f, expected >= 1.0", fileData.WatchedStatus)
+				}
+				if fileData.PercentComplete != 100 {
+					t.Errorf("fileData.PercentComplete = %d, expected 100", fileData.PercentComplete)
+				}
+			}
+		})
+	}
+}
+
 func TestWebhookHandler(t *testing.T) {
 	// Create a temporary directory for output
 	tempDir, err := os.MkdirTemp("", "test-output")
