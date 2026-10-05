@@ -1,72 +1,61 @@
-# Plex Clean
+# plex-clean
 
-A Go application that listens for Plex and Jellyfin webhook events and writes metadata to files when media is marked as watched.
+House rules for media after it has been watched, plus torrent cleanup. A single Go binary with no dependencies.
 
-## Overview
+1. **Watched events** come from Plex webhooks (`media.scrobble`, needs Plex Pass) and the Jellyfin
+   [Webhook plugin](https://github.com/jellyfin/jellyfin-plugin-webhook) (Playback Stop, played to completion).
+   No Tautulli needed. Every watched item gets a marker file in `OUTPUT_DIR` (same format as before).
+2. **Episodes wait a grace period** (default 24 h) in a persistent queue, so you can rewatch or catch up.
+   Watching the same episode again, or in the other server, doesn't restart the clock.
+3. **Then the show's rule applies:**
+   - Shows managed by **Sonarr** use tags: `delete-after-watch` deletes the episode file through Sonarr;
+     `archive` copies it to `ARCHIVE_DIR/<show>/Season NN/` first. Both unmonitor the episode so Sonarr
+     won't fetch it again.
+   - Shows **not in Sonarr** (e.g. downloaded by qBittorrent RSS rules) can be listed in `ARCHIVE_SHOWS` or
+     `DELETE_SHOWS`. Their file is found in `SEARCH_DIRS` by release name (`Show.Name.S14E10...`, `1x10`);
+     archive moves it to `ARCHIVE_DIR/<show>/` keeping its name.
+   - Anything else is left alone.
+4. **Torrent sweep** (formerly qbittorrent-cleaner): every `SWEEP_INTERVAL`, completed torrents whose files
+   are gone are removed from qBittorrent. It checks each torrent's own save path, skips categories managed by
+   Sonarr/Radarr, and refuses to run if the downloads share looks unmounted or if more than `SWEEP_MAX_REMOVE`
+   torrents, and over half of them, look deleted at once.
 
-This application:
-1. Listens for webhook events from Plex and/or Jellyfin
-2. For Plex: When a media.stop event is received, it fetches metadata from Tautulli
-3. For Jellyfin: When a playback.stop event is received with PlayedToCompletion flag
-4. If the media is marked as watched, it writes the metadata to a JSON file
+## Configuration
 
-## Usage
+| Variable | Default | |
+|---|---|---|
+| `PORT` | `3333` | Webhook server |
+| `OUTPUT_DIR` | `/output` | Marker files |
+| `STATE_FILE` | `/data/pending.json` | Grace-period queue |
+| `GRACE_PERIOD` | `24h` | Time between watching and acting |
+| `CHECK_INTERVAL` | `5m` | How often due episodes are processed |
+| `DRY_RUN` | `false` | Log what would happen, change nothing |
+| `SONARR_URL`, `SONARR_API_KEY` | | Enables the Sonarr rules |
+| `DELETE_TAG`, `ARCHIVE_TAG` | `delete-after-watch`, `archive` | Sonarr tag labels |
+| `ARCHIVE_DIR` | `/archive` | Archive root |
+| `ARCHIVE_SHOWS`, `DELETE_SHOWS` | | Comma-separated show names for shows not in Sonarr |
+| `SEARCH_DIRS` | `/downloads/ravi,/downloads/daniela` | Where name-based rules look for files |
+| `QBT_URL`, `QBT_USER`, `QBT_PASS` | | Enables the torrent sweep; credentials optional on qBittorrent's auth whitelist |
+| `SWEEP_INTERVAL` | `15m` | `0` disables the sweep |
+| `SWEEP_ROOT` | `/downloads` | Only torrents saved below this path; must match qBittorrent's container path |
+| `SWEEP_SKIP_CATEGORIES` | `sonarr,radarr` | Categories whose torrents their apps remove |
+| `SWEEP_MAX_REMOVE` | `5` | Safety limit, see above |
+| `DEBUG` | `false` | Verbose logging |
 
-### Docker
+Paths must be the same inside plex-clean, Sonarr and qBittorrent (mount the downloads share at `/downloads`
+everywhere), because Sonarr and qBittorrent report their own paths.
 
-The easiest way to run the application is using Docker:
+## Endpoints
+
+- `POST /plex`: Plex webhook (Settings → Webhooks).
+- `POST /jellyfin`: Jellyfin Webhook plugin, notification type "Playback Stop".
+- `POST /`: either, detected by content type.
+- `GET /pending`: the queue. `GET /healthz`: liveness.
+
+## Development
 
 ```bash
-docker run -p 3333:3333 \
-  -e API_HOST=your-tautulli-host:port \
-  -e API_KEY=your-tautulli-api-key \
-  -v /path/to/output:/output \
-  mallocator/plex-clean
+go test -race ./...
 ```
 
-### Environment Variables
-
-- `PORT`: The port on which the webhook server listens (default: 3333)
-- `API_HOST`: The hostname and port of your Tautulli server (required for Plex)
-- `API_KEY`: Your Tautulli API key (required for Plex)
-- `OUTPUT_DIR`: The directory where output files will be written (default: /output)
-- `DEBUG`: Enable debug logging (default: false)
-
-### Endpoints
-
-The application provides the following endpoints:
-
-- `/plex`: Dedicated endpoint for Plex webhooks
-- `/jellyfin`: Dedicated endpoint for Jellyfin webhooks
-- `/`: Default endpoint that attempts to detect the webhook type based on the Content-Type header
-
-For Jellyfin, you'll need to configure the webhook plugin to send events to the `/jellyfin` endpoint.
-
-## Changes from JavaScript Version
-
-The original JavaScript version used the `percent_complete` field to determine if media was watched. This Go version uses the `watched_status` field provided by Tautulli, which offers several advantages:
-
-- Simplicity: The logic becomes a simple boolean check rather than a threshold comparison
-- Reliability: Plex itself determines when content is "watched" based on its internal algorithms
-- Consistency: Using Plex's own determination ensures consistency with the Plex UI
-
-## Jellyfin Configuration
-
-To use this application with Jellyfin:
-
-1. Install the [Jellyfin Webhook Plugin](https://github.com/jellyfin/jellyfin-plugin-webhook)
-2. Configure a new webhook with the following settings:
-   - Server URL: `http://your-server:3333/jellyfin`
-   - Notification Type: Select at least "Playback Stop"
-   - Item Types: Select the media types you want to track (e.g., "Episodes", "Movies")
-   - User Filter: Optionally filter by specific users
-
-The application will process playback.stop events from Jellyfin and write metadata to files when media is marked as watched (PlayedToCompletion = true).
-
-## References
-
-* Python API has a list of properties that can be useful: https://python-plexapi.readthedocs.io/en/latest/modules/video.html
-* Community sourced info around the Plex API: https://github.com/Arcanemagus/plex-api/wiki
-* Official Plex API documentation: https://support.plex.tv/articles/201638786-plex-media-server-url-commands/
-* Tautulli API Reference: https://github.com/Tautulli/Tautulli/wiki/Tautulli-API-Reference
-* Jellyfin Webhook Plugin: https://github.com/jellyfin/jellyfin-plugin-webhook
+Releases: pushing a `v*` tag builds and publishes `mallox/plex-clean` to Docker Hub.

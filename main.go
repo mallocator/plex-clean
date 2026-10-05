@@ -1,507 +1,146 @@
+// plex-clean applies house rules to media after it has been watched.
+//
+// It receives "watched" events from Plex (media.scrobble webhooks) and Jellyfin (Webhook plugin,
+// PlaybackStop with PlayedToCompletion), writes a marker file per watched item, and queues episodes.
+// After a grace period, episodes of shows that Sonarr manages are handled according to the show's tags:
+//   - DELETE_TAG (default "delete-after-watch"): the episode file is deleted through Sonarr.
+//   - ARCHIVE_TAG (default "archive"): the file is copied to ARCHIVE_DIR/<show>/Season NN/, then deleted through Sonarr.
+//
+// Both unmonitor the episode so Sonarr doesn't fetch it again. Shows Sonarr doesn't manage can be listed in
+// ARCHIVE_SHOWS / DELETE_SHOWS instead; their files are found in SEARCH_DIRS by release name. Separately, a
+// periodic sweep removes completed qBittorrent torrents whose files are gone (formerly qbittorrent-cleaner).
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// Config holds the application configuration
 type Config struct {
-	Port      int
-	APIHost   string
-	APIKey    string
-	OutputDir string
-	Debug     bool
-}
+	Port          int
+	OutputDir     string // marker files; empty disables
+	StateFile     string // pending queue
+	GracePeriod   time.Duration
+	CheckInterval time.Duration
+	DryRun        bool
+	Debug         bool
 
-// PlexWebhookPayload represents the payload received from Plex webhook
-type PlexWebhookPayload struct {
-	Event    string `json:"event"`
-	Metadata struct {
-		Key string `json:"key"`
-	} `json:"Metadata"`
-}
+	SonarrURL    string
+	SonarrAPIKey string
+	DeleteTag    string
+	ArchiveTag   string
+	ArchiveDir   string
+	ArchiveShows []string // shows not in Sonarr, handled by file name (see files.go)
+	DeleteShows  []string
+	SearchDirs   []string
 
-// JellyfinWebhookPayload represents the payload received from Jellyfin webhook
-type JellyfinWebhookPayload struct {
-	Event       string `json:"Event"`
-	ItemID      string `json:"ItemId"`
-	ItemType    string `json:"ItemType"`
-	MediaStatus struct {
-		PlaybackStatus     string `json:"PlaybackStatus"`
-		PositionTicks      int64  `json:"PositionTicks"`
-		IsPaused           bool   `json:"IsPaused"`
-		PlayedToCompletion bool   `json:"PlayedToCompletion"`
-	} `json:"MediaStatus"`
-	NotificationType string `json:"NotificationType"`
-	Title            string `json:"Name"`
-	SeriesName       string `json:"SeriesName"`
-	SeasonNumber     int    `json:"SeasonNumber"`
-	EpisodeNumber    int    `json:"EpisodeNumber"`
-}
-
-// TautulliResponse represents the response from Tautulli API
-type TautulliResponse struct {
-	Response struct {
-		Data struct {
-			Data []MediaData `json:"data"`
-		} `json:"data"`
-	} `json:"response"`
-}
-
-// MediaData represents the media data from Tautulli
-type MediaData struct {
-	FullTitle        string      `json:"full_title"`
-	ParentMediaIndex json.Number `json:"parent_media_index"`
-	MediaIndex       json.Number `json:"media_index"`
-	WatchedStatus    float64     `json:"watched_status"`
-	PercentComplete  int         `json:"percent_complete"`
+	QbtURL         string
+	QbtUser        string
+	QbtPass        string
+	SweepInterval  time.Duration // 0 disables the torrent sweep
+	SweepRoot      string        // only torrents saved below this path are swept
+	SweepSkipCats  []string      // categories managed elsewhere (Sonarr/Radarr remove their own torrents)
+	SweepMaxRemove int           // refuse a sweep removing more than this many torrents and over half of them (missing mount)
 }
 
 func main() {
-	// Load configuration from environment variables
 	config := loadConfig()
+	queue, err := LoadQueue(config.StateFile)
+	if err != nil {
+		log.Fatalf("Loading queue %s: %v", config.StateFile, err)
+	}
 
-	// Create HTTP server with routing
-	http.HandleFunc("/plex", func(w http.ResponseWriter, r *http.Request) {
-		handlePlexWebhook(w, r, config)
-	})
+	app := &App{Config: config, Queue: queue}
+	if config.SonarrURL != "" {
+		app.Sonarr = NewSonarr(config.SonarrURL, config.SonarrAPIKey)
+	}
+	if config.QbtURL != "" {
+		app.Qbt = NewQbittorrent(config.QbtURL, config.QbtUser, config.QbtPass)
+	}
 
-	http.HandleFunc("/jellyfin", func(w http.ResponseWriter, r *http.Request) {
-		handleJellyfinWebhook(w, r, config)
-	})
+	go loop(config.CheckInterval, app.ProcessDue)
+	if app.Qbt != nil && config.SweepInterval > 0 {
+		go loop(config.SweepInterval, app.Sweep)
+	}
 
-	// Default handler for backward compatibility
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// If the path is exactly "/", try to detect the webhook type from the content
-		if r.URL.Path == "/" {
-			contentType := r.Header.Get("Content-Type")
-
-			// Plex webhooks are typically sent as multipart/form-data
-			if strings.Contains(contentType, "multipart/form-data") {
-				if config.Debug {
-					log.Printf("Detected Plex webhook based on Content-Type")
-				}
-				handlePlexWebhook(w, r, config)
-				return
-			}
-
-			// Jellyfin webhooks are typically sent as application/json
-			if strings.Contains(contentType, "application/json") {
-				if config.Debug {
-					log.Printf("Detected Jellyfin webhook based on Content-Type")
-				}
-				handleJellyfinWebhook(w, r, config)
-				return
-			}
-
-			// If we can't determine the type, return an error
-			log.Printf("Unable to determine webhook type from request")
-			http.Error(w, "Unable to determine webhook type", http.StatusBadRequest)
-			return
-		}
-
-		// For any other path, return 404
-		http.NotFound(w, r)
-	})
-
-	// Start server
-	log.Printf("Server running on port %d", config.Port)
-	log.Printf("Plex webhook support is enabled")
-	log.Printf("Jellyfin webhook support is enabled")
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
+	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, sweep %v)",
+		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Qbt != nil && config.SweepInterval > 0)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), app.Routes()))
 }
 
-// handlePlexWebhook processes Plex webhook requests
-func handlePlexWebhook(w http.ResponseWriter, r *http.Request, config Config) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Parse multipart form
-	err := r.ParseMultipartForm(10 << 20) // 10 MB max memory
-	if err != nil {
-		log.Printf("Error parsing multipart form: %v", err)
-		http.Error(w, "Error parsing form", http.StatusBadRequest)
-		return
-	}
-
-	// Get payload from form
-	payloadStr := r.FormValue("payload")
-	if payloadStr == "" {
-		log.Printf("No payload found in request")
-		http.Error(w, "No payload found", http.StatusBadRequest)
-		return
-	}
-
-	// Parse payload
-	var payload PlexWebhookPayload
-	if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
-		log.Printf("Error unmarshaling Plex payload: %v", err)
-		http.Error(w, "Error parsing payload", http.StatusBadRequest)
-		return
-	}
-
-	// Check if this is a media.stop event
-	if payload.Event != "media.stop" {
-		if config.Debug {
-			log.Printf("Ignoring Plex event: %s", payload.Event)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte("OK"))
-		if err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
-		return
-	}
-
-	// Check if metadata is present
-	if payload.Metadata.Key == "" {
-		if config.Debug {
-			log.Printf("Invalid Plex request, No metadata found")
-		}
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte("OK"))
-		if err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
-		return
-	}
-
-	// Fetch metadata from Tautulli
-	mediaData, err := fetchMetadata(payload.Metadata.Key, config)
-	if err != nil {
-		log.Printf("Error fetching metadata from Tautulli: %v", err)
-		http.Error(w, "Error fetching metadata", http.StatusInternalServerError)
-		return
-	}
-
-	if len(mediaData) == 0 {
-		if config.Debug {
-			log.Printf("No entries found in Tautulli for metadata key: %s", payload.Metadata.Key)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte("OK"))
-		if err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
-		return
-	} else if config.Debug {
-		log.Printf("Found %d entries for %s", len(mediaData), payload.Metadata.Key)
-	}
-
-	// Process media data
-	for _, data := range mediaData {
-		// Convert ParentMediaIndex and MediaIndex to integers
-		parentMediaIndex, err := data.ParentMediaIndex.Int64()
-		if err != nil {
-			log.Printf("Error converting ParentMediaIndex to int: %v", err)
-			continue
-		}
-		mediaIndex, err := data.MediaIndex.Int64()
-		if err != nil {
-			log.Printf("Error converting MediaIndex to int: %v", err)
-			continue
-		}
-
-		if data.WatchedStatus >= 1.0 {
-			filename := fmt.Sprintf("%s - S%dE%d.json", data.FullTitle, parentMediaIndex, mediaIndex)
-			log.Printf("Media marked as watched by Plex, writing to file %s", filename)
-
-			// Create the output directory if it doesn't exist
-			if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
-				log.Printf("Error creating output directory: %v", err)
-				continue
-			}
-
-			// Write the data to a file
-			jsonData, err := json.MarshalIndent(data, "", "  ")
-			if err != nil {
-				log.Printf("Error marshaling JSON: %v", err)
-				continue
-			}
-
-			outputPath := filepath.Join(config.OutputDir, filename)
-			if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
-				log.Printf("Error writing file: %v", err)
-			}
-		} else if config.Debug {
-			log.Printf("Media not marked as watched by Plex, ignoring")
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write([]byte("OK"))
-	if err != nil {
-		log.Printf("Error writing response: %v", err)
+// loop runs fn now and then every interval.
+func loop(interval time.Duration, fn func()) {
+	for {
+		fn()
+		time.Sleep(interval)
 	}
 }
 
-// handleJellyfinWebhook processes Jellyfin webhook requests
-func handleJellyfinWebhook(w http.ResponseWriter, r *http.Request, config Config) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Read the request body
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("Error reading Jellyfin request body: %v", err)
-		http.Error(w, "Error reading request body", http.StatusBadRequest)
-		return
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Printf("Error closing Jellyfin request body: %v", err)
-		}
-	}(r.Body)
-
-	// Parse the JSON payload
-	var payload JellyfinWebhookPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		log.Printf("Error unmarshaling Jellyfin payload: %v", err)
-		http.Error(w, "Error parsing payload", http.StatusBadRequest)
-		return
-	}
-
-	// Check if this is a playback stop event with completion
-	if payload.Event != "playback.stop" && payload.NotificationType != "PlaybackStop" {
-		if config.Debug {
-			log.Printf("Ignoring Jellyfin event: %s/%s", payload.Event, payload.NotificationType)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte("OK"))
-		if err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
-		return
-	}
-
-	// Check if the media was played to completion
-	if !payload.MediaStatus.PlayedToCompletion {
-		if config.Debug {
-			log.Printf("Jellyfin media not played to completion, ignoring")
-		}
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte("OK"))
-		if err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
-		return
-	}
-
-	// For episodes, use series name, season, and episode
-	if payload.ItemType == "Episode" && payload.SeriesName != "" {
-		// Create a MediaData object to maintain consistency with Plex
-		mediaData := MediaData{
-			FullTitle:        payload.SeriesName + " - " + payload.Title,
-			ParentMediaIndex: json.Number(strconv.Itoa(payload.SeasonNumber)),
-			MediaIndex:       json.Number(strconv.Itoa(payload.EpisodeNumber)),
-			WatchedStatus:    1.0, // Marked as watched
-			PercentComplete:  100, // Assuming 100% complete
-		}
-
-		filename := fmt.Sprintf("%s - S%dE%d.json", payload.SeriesName, payload.SeasonNumber, payload.EpisodeNumber)
-		log.Printf("Media marked as watched by Jellyfin, writing to file %s", filename)
-
-		// Create the output directory if it doesn't exist
-		if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
-			log.Printf("Error creating output directory: %v", err)
-			http.Error(w, "Error creating output directory", http.StatusInternalServerError)
-			return
-		}
-
-		// Write the data to a file
-		jsonData, err := json.MarshalIndent(mediaData, "", "  ")
-		if err != nil {
-			log.Printf("Error marshaling JSON: %v", err)
-			http.Error(w, "Error marshaling JSON", http.StatusInternalServerError)
-			return
-		}
-
-		outputPath := filepath.Join(config.OutputDir, filename)
-		if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
-			log.Printf("Error writing file: %v", err)
-			http.Error(w, "Error writing file", http.StatusInternalServerError)
-			return
-		}
-	} else if payload.ItemType == "Movie" {
-		// Handle movies
-		mediaData := MediaData{
-			FullTitle:        payload.Title,
-			ParentMediaIndex: json.Number("0"), // No season for movies
-			MediaIndex:       json.Number("0"), // No episode for movies
-			WatchedStatus:    1.0,              // Marked as watched
-			PercentComplete:  100,              // Assuming 100% complete
-		}
-
-		filename := fmt.Sprintf("%s.json", payload.Title)
-		log.Printf("Movie marked as watched by Jellyfin, writing to file %s", filename)
-
-		// Create the output directory if it doesn't exist
-		if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
-			log.Printf("Error creating output directory: %v", err)
-			http.Error(w, "Error creating output directory", http.StatusInternalServerError)
-			return
-		}
-
-		// Write the data to a file
-		jsonData, err := json.MarshalIndent(mediaData, "", "  ")
-		if err != nil {
-			log.Printf("Error marshaling JSON: %v", err)
-			http.Error(w, "Error marshaling JSON", http.StatusInternalServerError)
-			return
-		}
-
-		outputPath := filepath.Join(config.OutputDir, filename)
-		if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
-			log.Printf("Error writing file: %v", err)
-			http.Error(w, "Error writing file", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if config.Debug {
-			log.Printf("Unsupported Jellyfin item type: %s", payload.ItemType)
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write([]byte("OK"))
-	if err != nil {
-		log.Printf("Error writing response: %v", err)
-	}
-}
-
-// loadConfig loads configuration from environment variables
 func loadConfig() Config {
-	portStr := getEnv("PORT", "3333")
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		log.Printf("Invalid PORT value: %s, using default 3333", portStr)
-		port = 3333
-	}
 	return Config{
-		Port:      port,
-		APIHost:   getEnv("API_HOST", ""),
-		APIKey:    getEnv("API_KEY", ""),
-		OutputDir: getEnv("OUTPUT_DIR", "/output"),
-		Debug:     getEnv("DEBUG", "false") == "true",
+		Port:          getInt("PORT", 3333),
+		OutputDir:     getEnv("OUTPUT_DIR", "/output"),
+		StateFile:     getEnv("STATE_FILE", "/data/pending.json"),
+		GracePeriod:   getDuration("GRACE_PERIOD", 24*time.Hour),
+		CheckInterval: getDuration("CHECK_INTERVAL", 5*time.Minute),
+		DryRun:        getEnv("DRY_RUN", "false") == "true",
+		Debug:         getEnv("DEBUG", "false") == "true",
+
+		SonarrURL:    strings.TrimRight(getEnv("SONARR_URL", ""), "/"),
+		SonarrAPIKey: getEnv("SONARR_API_KEY", ""),
+		DeleteTag:    getEnv("DELETE_TAG", "delete-after-watch"),
+		ArchiveTag:   getEnv("ARCHIVE_TAG", "archive"),
+		ArchiveDir:   getEnv("ARCHIVE_DIR", "/archive"),
+		ArchiveShows: splitList(getEnv("ARCHIVE_SHOWS", "")),
+		DeleteShows:  splitList(getEnv("DELETE_SHOWS", "")),
+		SearchDirs:   splitList(getEnv("SEARCH_DIRS", "/downloads/ravi,/downloads/daniela")),
+
+		QbtURL:         strings.TrimRight(getEnv("QBT_URL", ""), "/"),
+		QbtUser:        getEnv("QBT_USER", ""),
+		QbtPass:        getEnv("QBT_PASS", ""),
+		SweepInterval:  getDuration("SWEEP_INTERVAL", 15*time.Minute),
+		SweepRoot:      getEnv("SWEEP_ROOT", "/downloads"),
+		SweepSkipCats:  splitList(getEnv("SWEEP_SKIP_CATEGORIES", "sonarr,radarr")),
+		SweepMaxRemove: getInt("SWEEP_MAX_REMOVE", 5),
 	}
 }
 
-// getEnv gets an environment variable or returns a default value
 func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getInt(key string, defaultValue int) int {
+	v, err := strconv.Atoi(getEnv(key, strconv.Itoa(defaultValue)))
+	if err != nil {
+		log.Printf("Invalid %s, using %d", key, defaultValue)
 		return defaultValue
 	}
-	return value
+	return v
 }
 
-func fetchMetadata(path string, config Config) ([]MediaData, error) {
-	if path == "" {
-		return nil, nil
-	}
-
-	// Extract the key from the path
-	key := extractKeyFromPath(path)
-	if key == "" {
-		if config.Debug {
-			log.Printf("Could not extract key from path: %s", path)
-		}
-		return nil, nil
-	}
-
-	// Construct the URL
-	url := fmt.Sprintf("http://%s/api/v2?apikey=%s&cmd=get_history&rating_key=%s&order_column=started&order=desc&length=1",
-		config.APIHost, config.APIKey, key)
-
-	// Make the request
-	resp, err := http.Get(url)
+func getDuration(key string, defaultValue time.Duration) time.Duration {
+	v, err := time.ParseDuration(getEnv(key, defaultValue.String()))
 	if err != nil {
-		return nil, fmt.Errorf("error making HTTP request: %w", err)
+		log.Printf("Invalid %s, using %s", key, defaultValue)
+		return defaultValue
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			log.Printf("Error closing response body: %v", closeErr)
-		}
-	}()
-
-	// Check for non-200 status code
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("received non-200 response: %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-	}
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %w", err)
-	}
-
-	// Preprocess the JSON to handle various edge cases in the response
-	// This is necessary because the Tautulli API sometimes returns empty strings for numeric fields,
-	// which causes the JSON unmarshaler to fail. We use regular expressions to handle different
-	// spacing patterns in the JSON and replace empty strings with appropriate values.
-	bodyStr := string(body)
-
-	// Use regular expressions to handle different spacing patterns
-	// Replace empty strings with "0" for json.Number fields
-	// The \s* in the regex matches any amount of whitespace, making it flexible with spacing
-	parentMediaIndexRegex := regexp.MustCompile(`"parent_media_index"\s*:\s*""`)
-	bodyStr = parentMediaIndexRegex.ReplaceAllString(bodyStr, `"parent_media_index":"0"`)
-
-	mediaIndexRegex := regexp.MustCompile(`"media_index"\s*:\s*""`)
-	bodyStr = mediaIndexRegex.ReplaceAllString(bodyStr, `"media_index":"0"`)
-
-	// Handle cases for float64 and int fields
-	// Empty strings in these fields would also cause unmarshaling errors
-	watchedStatusRegex := regexp.MustCompile(`"watched_status"\s*:\s*""`)
-	bodyStr = watchedStatusRegex.ReplaceAllString(bodyStr, `"watched_status":0`)
-
-	percentCompleteRegex := regexp.MustCompile(`"percent_complete"\s*:\s*""`)
-	bodyStr = percentCompleteRegex.ReplaceAllString(bodyStr, `"percent_complete":0`)
-
-	// Parse the response
-	var tautulliResp TautulliResponse
-	if err := json.Unmarshal([]byte(bodyStr), &tautulliResp); err != nil {
-		return nil, fmt.Errorf("error unmarshaling response: %w", err)
-	}
-
-	// Return the data
-	if tautulliResp.Response.Data.Data == nil {
-		return []MediaData{}, nil
-	}
-	return tautulliResp.Response.Data.Data, nil
+	return v
 }
 
-func extractKeyFromPath(path string) string {
-	// Look for "/library/metadata/" and extract the numeric key
-	const prefix = "/library/metadata/"
-	if idx := strings.Index(path, prefix); idx != -1 { // Fixed to use strings.Index
-		potentialKey := path[idx+len(prefix):]
-		if _, err := strconv.Atoi(potentialKey); err == nil {
-			return potentialKey
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
 		}
 	}
-
-	// Fallback: extract the numeric key after the last slash
-	if lastSlashIndex := strings.LastIndex(path, "/"); lastSlashIndex != -1 { // Fixed to use strings.LastIndex
-		potentialKey := path[lastSlashIndex+1:]
-		if _, err := strconv.Atoi(potentialKey); err == nil {
-			return potentialKey
-		}
-	}
-
-	return ""
+	return out
 }

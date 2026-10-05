@@ -12,5 +12,5 @@ FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 WORKDIR /app
 COPY --from=builder /app/plex-clean .
-VOLUME /output
+VOLUME /output /data
 CMD ["/app/plex-clean"]
