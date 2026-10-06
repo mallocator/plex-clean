@@ -40,7 +40,8 @@ func newFakeSimkl(t *testing.T) (*fakeSimkl, *httptest.Server) {
 			 "movies":[
 			  {"status":"completed","movie":{"title":"Seen It","ids":{"tmdb":101}}},
 			  {"status":"dropped","movie":{"title":"Dropped It","ids":{"tmdb":102}}},
-			  {"status":"completed","movie":{"title":"Cinema","ids":{"tmdb":103}}},
+			  {"status":"completed","last_watched_at":"2026-07-20T20:00:00Z","movie":{"title":"Cinema","ids":{"tmdb":103}}},
+			  {"status":"completed","last_watched_at":"2026-08-01T20:00:00Z","movie":{"title":"Copy Wanted","ids":{"tmdb":107}}},
 			  {"status":"plantowatch","movie":{"title":"Want Again","ids":{"tmdb":104}}},
 			  {"status":"watching","movie":{"title":"Own It","ids":{"tmdb":105}}},
 			  {"status":"plantowatch","movie":{"title":"Not Yet","ids":{"tmdb":106}}}],
@@ -106,8 +107,12 @@ func newFakeServices(t *testing.T) (*fakeServices, *httptest.Server) {
 			json.NewEncoder(w).Encode([]map[string]any{{"id": 1, "title": "Sonarr Show", "tmdbId": 203}})
 		case p == "/api/v3/movie" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode([]map[string]any{
-				{"id": 7, "title": "Cinema", "tmdbId": 103, "monitored": true, "hasFile": false, "isAvailable": false},
-				{"id": 10, "title": "Seen It", "tmdbId": 101, "monitored": true, "hasFile": false, "isAvailable": true}, // released: wanted copy
+				// watched 2026-07-20, digital release 2026-09-29: cinema
+				{"id": 7, "title": "Cinema", "tmdbId": 103, "monitored": true, "hasFile": false, "digitalRelease": "2026-09-29T00:00:00Z", "physicalRelease": "2026-11-17T00:00:00Z"},
+				// watched 2026-08-01, released on disc long before: a copy is wanted
+				{"id": 11, "title": "Copy Wanted", "tmdbId": 107, "monitored": true, "hasFile": false, "physicalRelease": "2010-11-24T00:00:00Z"},
+				// completed without a watch date, but already released: left alone
+				{"id": 10, "title": "Seen It", "tmdbId": 101, "monitored": true, "hasFile": false, "digitalRelease": "2010-07-22T00:00:00Z"},
 				{"id": 8, "title": "Own It", "tmdbId": 105, "monitored": true, "hasFile": false},
 				{"id": 9, "title": "Not Yet", "tmdbId": 106, "monitored": true, "hasFile": false},
 			})
@@ -157,7 +162,7 @@ func TestSimklSyncAppliesHouseRules(t *testing.T) {
 	a, fsimkl, fsvc, _ := simklApp(t, time.Now())
 	a.SimklSync()
 	sort.Strings(fsvc.posted)
-	if got := fmt.Sprint(fsvc.posted); got != "[movie:102 tv:201 tv:301]" {
+	if got := fmt.Sprint(fsvc.posted); got != "[movie:102 tv:201 tv:301]" { // 101, 103, 107 are in Radarr
 		t.Errorf("blocklisted %s (want completed/dropped movies and watching/hold shows; not tv:202 already there, not tv:203, movie:101 (in Radarr now) or movie:103 managed by Sonarr/Radarr)", got)
 	}
 	if fmt.Sprint(fsvc.deleted) != "[movie:104]" {
@@ -210,5 +215,26 @@ func TestSimklMissingTokenFile(t *testing.T) {
 	a.SimklSync()
 	if fsimkl.gotToken != "" || len(fsvc.posted) != 0 {
 		t.Fatal("sync must stop without a token")
+	}
+}
+
+func TestSeenInCinema(t *testing.T) {
+	watched := map[int]time.Time{1: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC), 2: {}}
+	cases := []struct {
+		tmdb  int
+		movie map[string]any
+		want  bool
+	}{
+		{1, map[string]any{"digitalRelease": "2026-09-29T00:00:00Z"}, true},                                             // before digital
+		{1, map[string]any{"digitalRelease": "2026-12-01T00:00:00Z", "physicalRelease": "2026-07-01T00:00:00Z"}, false}, // disc came first
+		{1, map[string]any{}, true}, // no home release yet
+		{2, map[string]any{"digitalRelease": "2026-09-29T00:00:00Z"}, false}, // no watch date, released
+		{2, map[string]any{}, true},  // no watch date, unreleased
+		{3, map[string]any{}, false}, // not completed
+	}
+	for i, c := range cases {
+		if got := seenInCinema(watched, c.tmdb, c.movie); got != c.want {
+			t.Errorf("case %d: got %v want %v", i, got, c.want)
+		}
 	}
 }

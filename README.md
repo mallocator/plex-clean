@@ -26,7 +26,8 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 5. **Simkl sync** (every `SIMKL_INTERVAL`): keeps Seerr and Radarr in line with the owner's Simkl lists.
    - Seerr blocklist (hidden from discovery): movies completed or dropped; shows/anime watching, completed, dropped
      or on hold. Titles Sonarr/Radarr manage are skipped; movies back on "plan to watch"/"watching" are unblocked.
-   - Cinema rule: a movie completed in Simkl while Radarr still waits for its release is unmonitored.
+   - Cinema rule: a movie completed in Simkl before its home release (watch date earlier than the digital or
+     physical release) is unmonitored in Radarr if it hasn't been downloaded.
    - Collection rule: a wanted movie Seerr already reports as available (Jellyfin library) gets a Radarr exclusion
      (and is unmonitored if Radarr waits for it), so Radarr's Simkl import list doesn't fetch a second copy.
    - Auth: Simkl OAuth2 token file (`SIMKL_TOKEN_FILE`, from a one-time device login), renewed with its refresh
