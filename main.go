@@ -90,13 +90,24 @@ func main() {
 		go loop(config.SweepInterval, app.Sweep)
 	}
 	if app.Simkl != nil && config.SimklInterval > 0 {
-		go loop(config.SimklInterval, app.SimklSync)
+		go loopRetry(config.SimklInterval, 10*time.Minute, app.SimklSync)
 	}
 
 	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d, simkl %v)",
 		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Radarr != nil,
 		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders), app.Simkl != nil)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), app.Routes()))
+}
+
+// loopRetry runs fn now and then every interval, or after retry if fn reports failure.
+func loopRetry(interval, retry time.Duration, fn func() bool) {
+	for {
+		wait := interval
+		if !fn() {
+			wait = retry
+		}
+		time.Sleep(wait)
+	}
 }
 
 // loop runs fn now and then every interval.

@@ -248,15 +248,16 @@ func (s *Seerr) Unblock(k mediaKey) error {
 	return err
 }
 
-// SimklSync applies the Simkl lists to Seerr's blocklist and Radarr (see the comment at the top).
-func (a *App) SimklSync() {
+// SimklSync applies the Simkl lists to Seerr's blocklist and Radarr (see the comment at the top). It returns false
+// if the sync couldn't run (e.g. a service still starting), so the caller retries soon instead of a full interval later.
+func (a *App) SimklSync() bool {
 	if a.Simkl == nil || a.Seerr == nil {
-		return
+		return true
 	}
 	all, err := a.Simkl.AllItems()
 	if err != nil {
 		log.Printf("Simkl: %v", err)
-		return
+		return false
 	}
 	hide := map[mediaKey]string{}
 	want := map[mediaKey]bool{}
@@ -292,13 +293,13 @@ func (a *App) SimklSync() {
 
 	managed, radarrMovies, err := a.managedMedia()
 	if err != nil {
-		log.Printf("Simkl: %v", err)
-		return
+		log.Printf("Simkl: %v (retrying soon)", err)
+		return false
 	}
 	current, err := a.Seerr.Blocklist()
 	if err != nil {
-		log.Printf("Simkl: %v", err)
-		return
+		log.Printf("Simkl: %v (retrying soon)", err)
+		return false
 	}
 
 	added, removed, unmonitored, excluded := 0, 0, 0, 0
@@ -395,6 +396,7 @@ func (a *App) SimklSync() {
 	if added+removed+unmonitored+excluded > 0 || a.Config.Debug {
 		log.Printf("Simkl: %d titles to hide; blocklisted %d, unblocked %d, excluded %d, unmonitored %d", len(hide), added, removed, excluded, unmonitored)
 	}
+	return true
 }
 
 // managedMedia returns the titles Sonarr/Radarr manage and Radarr's movies (raw, for updates).
