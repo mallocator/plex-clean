@@ -19,6 +19,8 @@ type App struct {
 	Sonarr *Sonarr
 	Qbt    *Qbittorrent
 	Radarr *Arr
+	Simkl  *Simkl
+	Seerr  *Seerr
 	Now    func() time.Time // for tests
 }
 

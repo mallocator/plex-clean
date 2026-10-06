@@ -7,7 +7,8 @@
 //   - ARCHIVE_TAG (default "archive"): the file is copied to ARCHIVE_DIR/<show>/Season NN/, then deleted through Sonarr.
 //
 // Both unmonitor the episode so Sonarr doesn't fetch it again. Shows and movies requested through Seerr are moved into
-// their requester's folder (USER_FOLDERS, see routing.go). Shows Sonarr doesn't manage can be listed in
+// their requester's folder (USER_FOLDERS, see routing.go). With Simkl configured, Seerr's blocklist and Radarr follow
+// the owner's Simkl lists (simkl.go). Shows Sonarr doesn't manage can be listed in
 // ARCHIVE_SHOWS / DELETE_SHOWS instead; their files are found in SEARCH_DIRS by release name. Separately, a
 // periodic sweep removes completed qBittorrent torrents whose files are gone (formerly qbittorrent-cleaner).
 package main
@@ -46,6 +47,13 @@ type Config struct {
 	TVSubdir     string
 	MovieSubdir  string
 
+	SimklClientID  string
+	SimklTokenFile string
+	SimklInterval  time.Duration // 0 disables the Simkl sync
+	SeerrURL       string
+	SeerrAPIKey    string
+	SeerrUserID    int // Seerr user the blocklist entries are attributed to
+
 	QbtURL         string
 	QbtUser        string
 	QbtPass        string
@@ -72,15 +80,22 @@ func main() {
 	if config.RadarrURL != "" {
 		app.Radarr = NewArr(config.RadarrURL, config.RadarrAPIKey)
 	}
+	if config.SimklClientID != "" && config.SeerrURL != "" {
+		app.Simkl = NewSimkl(config.SimklClientID, config.SimklTokenFile)
+		app.Seerr = NewSeerr(config.SeerrURL, config.SeerrAPIKey, config.SeerrUserID)
+	}
 
 	go loop(config.CheckInterval, func() { app.Route(); app.ProcessDue() })
 	if app.Qbt != nil && config.SweepInterval > 0 {
 		go loop(config.SweepInterval, app.Sweep)
 	}
+	if app.Simkl != nil && config.SimklInterval > 0 {
+		go loop(config.SimklInterval, app.SimklSync)
+	}
 
-	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d)",
+	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d, simkl %v)",
 		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Radarr != nil,
-		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders))
+		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders), app.Simkl != nil)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), app.Routes()))
 }
 
@@ -116,6 +131,13 @@ func loadConfig() Config {
 		UserFolders:  parseMap(getEnv("USER_FOLDERS", "")),
 		TVSubdir:     getEnv("TV_SUBDIR", "tv"),
 		MovieSubdir:  getEnv("MOVIE_SUBDIR", "movies"),
+
+		SimklClientID:  getEnv("SIMKL_CLIENT_ID", ""),
+		SimklTokenFile: getEnv("SIMKL_TOKEN_FILE", "/data/simkl.json"),
+		SimklInterval:  getDuration("SIMKL_INTERVAL", 6*time.Hour),
+		SeerrURL:       strings.TrimRight(getEnv("SEERR_URL", ""), "/"),
+		SeerrAPIKey:    getEnv("SEERR_API_KEY", ""),
+		SeerrUserID:    getInt("SEERR_USER_ID", 1),
 
 		QbtURL:         strings.TrimRight(getEnv("QBT_URL", ""), "/"),
 		QbtUser:        getEnv("QBT_USER", ""),
