@@ -16,10 +16,13 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
      archive moves it to `ARCHIVE_DIR/<show>/` keeping its name.
    - Anything else is left alone.
 4. **Per-user folders**: Seerr tags each request with the requester (`2-daniela`). With `USER_FOLDERS`
-   (`daniela=/downloads/daniela,mallox=/downloads/ravi`), shows and movies carrying such a tag are moved through
-   Sonarr/Radarr (`moveFiles=true`) into `<folder>/tv` or `<folder>/movies`. Runs on Sonarr/Radarr "Connect" webhooks
-   (`POST /sonarr`, `/radarr`, e.g. On Series/Movie Add) and every `CHECK_INTERVAL`. Items without a mapped user tag
-   are never moved.
+   (`2-daniela=/downloads/daniela,1-mallox=/downloads/ravi`; keys are Seerr's tag labels `<user id>-<name>`):
+   - shows and movies carrying a user tag are moved through Sonarr/Radarr (`moveFiles=true`) into `<folder>/tv` or
+     `<folder>/movies`;
+   - shows and movies without a user tag that sit in a user's folder (added or imported directly) get that user's
+     tag, so everything ends up tagged by owner.
+   Runs on Sonarr/Radarr "Connect" webhooks (`POST /sonarr`, `/radarr`, e.g. On Series/Movie Add) and every
+   `CHECK_INTERVAL`. Items outside the user folders are never touched.
 5. **Torrent sweep** (formerly qbittorrent-cleaner): every `SWEEP_INTERVAL`, completed torrents whose files
    are gone are removed from qBittorrent. It checks each torrent's own save path, skips categories managed by
    Sonarr/Radarr, and refuses to run if the downloads share looks unmounted or if more than `SWEEP_MAX_REMOVE`
@@ -39,7 +42,7 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 | `DELETE_TAG`, `ARCHIVE_TAG` | `delete-after-watch`, `archive` | Sonarr tag labels |
 | `ARCHIVE_DIR` | `/archive` | Archive root |
 | `RADARR_URL`, `RADARR_API_KEY` | | Radarr for per-user movie folders |
-| `USER_FOLDERS` | | `user=/base,user2=/base2` (Seerr user names) |
+| `USER_FOLDERS` | | `2-daniela=/base,1-mallox=/base2` (Seerr tag labels; a plain name also routes but can't be created as a tag) |
 | `TV_SUBDIR`, `MOVIE_SUBDIR` | `tv`, `movies` | Subfolders below each user's base |
 | `ARCHIVE_SHOWS`, `DELETE_SHOWS` | | Comma-separated show names for shows not in Sonarr |
 | `SEARCH_DIRS` | `/downloads/ravi,/downloads/daniela` | Where name-based rules look for files |
