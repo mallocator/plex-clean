@@ -13,7 +13,8 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
      won't fetch it again.
    - Shows **not in Sonarr** (e.g. downloaded by qBittorrent RSS rules) can be listed in `ARCHIVE_SHOWS` or
      `DELETE_SHOWS`. Their file is found in `SEARCH_DIRS` by release name (`Show.Name.S14E10...`, `1x10`);
-     archive moves it to `ARCHIVE_DIR/<show>/` keeping its name.
+     archive moves it to `ARCHIVE_DIR/<show>/` keeping its name. These name rules also apply to a show Sonarr
+     knows but has no file or tag for (e.g. added by an import list while an RSS rule downloads it).
    - Anything else is left alone.
 4. **Per-user folders**: Seerr tags each request with the requester (`2-daniela`). With `USER_FOLDERS`
    (`2-daniela=/downloads/daniela,1-mallox=/downloads/ravi`; keys are Seerr's tag labels `<user id>-<name>`):

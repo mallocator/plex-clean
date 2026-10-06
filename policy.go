@@ -67,6 +67,9 @@ func (a *App) apply(it PendingItem) (bool, error) {
 		}
 	}
 	if action == "" {
+		if handled, err := a.applyByName(it); handled || err != nil {
+			return err == nil, err
+		}
 		log.Printf("%s: no %q or %q tag on %s, keeping", it, a.Config.DeleteTag, a.Config.ArchiveTag, series.Title)
 		return true, nil
 	}
@@ -76,6 +79,11 @@ func (a *App) apply(it PendingItem) (bool, error) {
 		return false, err
 	}
 	if ep == nil || !ep.HasFile || ep.EpisodeFileID == 0 {
+		// Sonarr knows the show but not this file (e.g. an import list added a show that a qBittorrent RSS
+		// rule downloads): the name rules still apply to it.
+		if handled, err := a.applyByName(it); handled || err != nil {
+			return err == nil, err
+		}
 		log.Printf("%s: no file in Sonarr (already removed?)", it)
 		return true, nil
 	}

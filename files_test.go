@@ -139,3 +139,24 @@ func TestSonarrShowTakesPrecedenceOverNameRules(t *testing.T) {
 		t.Fatal("file outside Sonarr must be untouched")
 	}
 }
+
+func TestNameRuleAppliesWhenSonarrHasNoFile(t *testing.T) {
+	a, fs := appWithSonarr(t)
+	dl := t.TempDir()
+	a.Config.SearchDirs = []string{dl}
+	a.Config.ArchiveDir = t.TempDir()
+	a.Config.ArchiveShows = []string{"The Simpsons"} // in Sonarr (delete tag), but this episode came from an RSS rule
+	src := filepath.Join(dl, "The.Simpsons.S38E09.1080p.mkv")
+	os.WriteFile(src, []byte("x"), 0644)
+	watch(a, "The Simpsons", 38, 9, 25*time.Hour)
+	a.ProcessDue()
+	if len(fs.deleted) != 0 {
+		t.Fatalf("nothing to delete in Sonarr, got %v", fs.deleted)
+	}
+	if _, err := os.Stat(filepath.Join(a.Config.ArchiveDir, "The Simpsons", "The.Simpsons.S38E09.1080p.mkv")); err != nil {
+		t.Fatalf("name rule not applied: %v", err)
+	}
+	if len(a.Queue.Items()) != 0 {
+		t.Fatal("item should leave the queue")
+	}
+}
