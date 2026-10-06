@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 )
@@ -42,9 +43,13 @@ func (q queueItem) unusable() string {
 	return ""
 }
 
-// stalled reports a torrent that hasn't received anything for longer than timeout.
+// downloadingStates are the states of a torrent that should be receiving data (queued ones wait for a slot).
+var downloadingStates = []string{"downloading", "forcedDL", "stalledDL", "metaDL", "forcedMetaDL"}
+
+// stalled reports an incomplete torrent that hasn't received anything for longer than timeout. Progress, not
+// amount_left, decides "incomplete": without metadata the size (and so amount_left) is still 0.
 func stalled(t Torrent, now time.Time, timeout time.Duration) bool {
-	if t.AmountLeft == 0 || (t.State != "stalledDL" && t.State != "metaDL" && t.State != "forcedMetaDL") {
+	if t.Progress >= 1 || !slices.Contains(downloadingStates, t.State) {
 		return false
 	}
 	last := max(t.AddedOn, t.LastActivity)

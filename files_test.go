@@ -168,13 +168,17 @@ func TestSonarrTagAppliesToFilesFoundByName(t *testing.T) {
 	a.Config.ArchiveDir = t.TempDir()
 	a.Config.AnimeArchiveDir = t.TempDir()
 	// downloaded by RSS rules before the shows moved to Sonarr: Sonarr has no file for these episodes
-	for _, n := range []string{"The.Simpsons.S38E05.1080p.mkv", "Futurama S14E01 1080p.mkv", "Frieren.S02E03.1080p.mkv"} {
+	for _, n := range []string{"The.Simpsons.S38E05.1080p.mkv", "Futurama S14E01 1080p.mkv", "Frieren.S02E03.1080p.mkv", "Greys.Anatomy.S23E01.mkv"} {
 		os.WriteFile(filepath.Join(dl, n), []byte("x"), 0644)
 	}
 	watch(a, "The Simpsons", 38, 5, 25*time.Hour) // delete-after-watch
 	watch(a, "Futurama", 14, 1, 25*time.Hour)     // archive
 	watch(a, "Frieren", 2, 3, 25*time.Hour)       // archive, anime
+	watch(a, "Grey's Anatomy", 23, 1, 25*time.Hour)
 	a.ProcessDue()
+	if _, err := os.Stat(filepath.Join(dl, "Greys.Anatomy.S23E01.mkv")); err != nil {
+		t.Error("unmonitored show (tags from an import list): file must be kept")
+	}
 	if _, err := os.Stat(filepath.Join(dl, "The.Simpsons.S38E05.1080p.mkv")); !os.IsNotExist(err) {
 		t.Error("tagged delete-after-watch: file should be deleted")
 	}

@@ -87,10 +87,15 @@ func (a *App) apply(it PendingItem) (bool, error) {
 	}
 	if ep == nil || !ep.HasFile || ep.EpisodeFileID == 0 {
 		// Sonarr knows the show but not this file: downloaded by a qBittorrent RSS rule (before the show moved
-		// to Sonarr, or a show an import list added). ARCHIVE_SHOWS/DELETE_SHOWS win; otherwise the show's tag
-		// applies to the file found by name.
+		// to Sonarr, or a show an import list added). ARCHIVE_SHOWS/DELETE_SHOWS win; otherwise the tag of a show
+		// Sonarr monitors applies to the file found by name. Unmonitored shows (added by an import list, tags
+		// never chosen) are left alone.
 		if handled, err := a.applyByName(it); handled || err != nil {
 			return err == nil, err
+		}
+		if !series.Monitored {
+			log.Printf("%s: no file in Sonarr and %s isn't monitored, keeping", it, series.Title)
+			return true, nil
 		}
 		if err := a.applyToFiles(it, action, archiveDst); err != nil {
 			return false, err

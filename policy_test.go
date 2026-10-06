@@ -38,11 +38,12 @@ func newFakeSonarr(t *testing.T, mediaDir string) (*fakeSonarr, *httptest.Server
 		31: {ID: 31, Path: write("tv/Family Guy/Season 24/Family Guy - S24E01.mkv", "fg"), Size: 2},
 	}}
 	series := []map[string]any{
-		{"id": 1, "title": "The Simpsons", "path": "/downloads/tv/The Simpsons", "tags": []int{7}},
-		{"id": 2, "title": "Futurama", "path": "/downloads/tv/Futurama", "tags": []int{8},
+		{"id": 1, "title": "The Simpsons", "path": "/downloads/tv/The Simpsons", "tags": []int{7}, "monitored": true},
+		{"id": 2, "title": "Futurama", "path": "/downloads/tv/Futurama", "tags": []int{8}, "monitored": true,
 			"alternateTitles": []map[string]any{{"title": "Futurama (Hulu)"}}},
 		{"id": 3, "title": "Family Guy", "path": "/downloads/tv/Family Guy", "tags": []int{}},
-		{"id": 4, "title": "Frieren", "path": "/downloads/tv/Frieren", "tags": []int{8}, "seriesType": "anime"},
+		{"id": 4, "title": "Frieren", "path": "/downloads/tv/Frieren", "tags": []int{8}, "seriesType": "anime", "monitored": true},
+		{"id": 5, "title": "Grey's Anatomy", "path": "/downloads/tv/Grey's Anatomy", "tags": []int{7}}, // import list, unmonitored
 	}
 	episodes := map[int][]SonarrEpisode{
 		1: {{ID: 101, SeasonNumber: 38, EpisodeNumber: 2, HasFile: true, EpisodeFileID: 11}},

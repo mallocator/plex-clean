@@ -21,14 +21,15 @@ type Qbittorrent struct {
 }
 
 type Torrent struct {
-	Hash         string `json:"hash"`
-	Name         string `json:"name"`
-	AmountLeft   int64  `json:"amount_left"`
-	State        string `json:"state"`
-	Category     string `json:"category"`
-	SavePath     string `json:"save_path"`
-	AddedOn      int64  `json:"added_on"`      // unix time
-	LastActivity int64  `json:"last_activity"` // unix time of the last data transfer
+	Hash         string  `json:"hash"`
+	Name         string  `json:"name"`
+	AmountLeft   int64   `json:"amount_left"`
+	Progress     float64 `json:"progress"` // 0..1; amount_left is 0 while metadata is missing
+	State        string  `json:"state"`
+	Category     string  `json:"category"`
+	SavePath     string  `json:"save_path"`
+	AddedOn      int64   `json:"added_on"`      // unix time
+	LastActivity int64   `json:"last_activity"` // unix time of the last data transfer
 }
 
 type TorrentFile struct {

@@ -13,7 +13,8 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    - Shows managed by **Sonarr** use tags: `delete-after-watch` deletes the episode file through Sonarr;
      `archive` copies it to `ARCHIVE_DIR/<show>/Season NN/` first (`ANIME_ARCHIVE_DIR` for anime series). Both
      unmonitor the episode so Sonarr won't fetch it again. If Sonarr has no file for the episode (downloaded by an
-     RSS rule before the show moved to Sonarr), the tag applies to the file found by name, as below.
+     RSS rule before the show moved to Sonarr), the tag of a monitored show applies to the file found by name, as below
+     (unmonitored shows, e.g. added by an import list, are left alone).
    - Shows **not in Sonarr** (e.g. downloaded by qBittorrent RSS rules) can be listed in `ARCHIVE_SHOWS` or
      `DELETE_SHOWS`. Their file is found in `SEARCH_DIRS` by release name (`Show.Name.S14E10...`, `1x10`);
      archive moves it to `ARCHIVE_DIR/<show>/` keeping its name. These name rules also apply to a show Sonarr
@@ -36,6 +37,9 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
      physical release) is unmonitored in Radarr if it hasn't been downloaded.
    - Collection rule: a wanted movie Seerr already reports as available (Jellyfin library) gets a Radarr exclusion
      (and is unmonitored if Radarr waits for it), so Radarr's Simkl import list doesn't fetch a second copy.
+   - Each rule acts once per movie (`SIMKL_RULES_FILE` remembers them): a movie the owner monitors again in Radarr,
+     or whose exclusion they delete, stays that way. Without the file, existing unmonitored movies and exclusions
+     count as handled.
    - Auth: Simkl OAuth2 token file (`SIMKL_TOKEN_FILE`, from a one-time device login), renewed with its refresh
      token a day before it expires.
 6. **Torrent sweep** (formerly qbittorrent-cleaner): every `SWEEP_INTERVAL`, completed torrents whose files
@@ -65,6 +69,7 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 | `TV_SUBDIR`, `MOVIE_SUBDIR` | `tv`, `movies` | Subfolders below each user's base |
 | `SIMKL_CLIENT_ID`, `SIMKL_TOKEN_FILE` | , `/data/simkl.json` | Simkl app and token (`access_token`, `refresh_token`, `expires_in`, `obtained_at`) |
 | `SIMKL_INTERVAL` | `6h` | `0` disables the Simkl sync |
+| `SIMKL_RULES_FILE` | `/data/simkl-rules.json` | Movies the cinema/collection rules already handled |
 | `SEERR_URL`, `SEERR_API_KEY`, `SEERR_USER_ID` | , , `1` | Seerr for the blocklist (entries attributed to that user) |
 | `PLEX_URL`, `PLEX_COLLECTION_ROOT` | , `/volume1/Video` | Plex local API (no token from an allowed network) for the collection rule |
 | `ARCHIVE_SHOWS`, `DELETE_SHOWS` | | Comma-separated show names for shows not in Sonarr |

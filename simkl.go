@@ -333,6 +333,7 @@ func (a *App) SimklSync() bool {
 	}
 	// collection rule: wanted movies that are already in the library (Plex's curated sections, or Seerr's view of Jellyfin)
 	haveCopy := map[int]bool{}
+	mem := loadRuleMemory("", nil, nil)
 	if a.Plex != nil {
 		owned, err := a.Plex.CollectionMovies()
 		if err != nil {
@@ -353,14 +354,15 @@ func (a *App) SimklSync() bool {
 				isExcluded[id[0]] = true
 			}
 		}
+		mem = loadRuleMemory(a.Config.SimklRulesFile, radarrMovies, isExcluded)
 		for k := range want {
 			avail, title, year, err := a.Seerr.MovieAvailable(k.TMDB)
 			if err != nil || !(avail || haveCopy[k.TMDB]) {
 				continue
 			}
 			haveCopy[k.TMDB] = true
-			if isExcluded[k.TMDB] {
-				continue
+			if isExcluded[k.TMDB] || mem.Excluded[k.TMDB] != "" {
+				continue // excluded already, or the owner removed the exclusion: leave it
 			}
 			if a.Config.DryRun {
 				log.Printf("[dry run] Simkl: would exclude %q in Radarr (already in the collection)", title)
@@ -371,13 +373,14 @@ func (a *App) SimklSync() bool {
 				continue
 			}
 			log.Printf("Simkl: excluded %q in Radarr (on the watchlist, but already in the collection)", title)
+			mem.markExcluded(k.TMDB, "collection")
 			excluded++
 		}
 	}
 	for _, m := range radarrMovies {
 		tmdb := toInts([]any{m["tmdbId"]})
-		if len(tmdb) == 0 || m["monitored"] != true || m["hasFile"] == true {
-			continue
+		if len(tmdb) == 0 || m["monitored"] != true || m["hasFile"] == true || mem.Unmonitored[tmdb[0]] != "" {
+			continue // a movie the rules handled before and the owner monitored again stays monitored
 		}
 		reason := ""
 		switch {
@@ -400,8 +403,10 @@ func (a *App) SimklSync() bool {
 			continue
 		}
 		log.Printf("Simkl: unmonitored %q in Radarr (%s)", title, reason)
+		mem.markUnmonitored(tmdb[0], reason)
 		unmonitored++
 	}
+	mem.save()
 	if added+removed+unmonitored+excluded > 0 || a.Config.Debug {
 		log.Printf("Simkl: %d titles to hide; blocklisted %d, unblocked %d, excluded %d, unmonitored %d", len(hide), added, removed, excluded, unmonitored)
 	}

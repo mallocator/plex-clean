@@ -51,6 +51,7 @@ type Config struct {
 	SimklClientID  string
 	SimklTokenFile string
 	SimklInterval  time.Duration // 0 disables the Simkl sync
+	SimklRulesFile string        // movies the cinema/collection rules handled (each rule acts once per movie)
 	SeerrURL       string
 	SeerrAPIKey    string
 	SeerrUserID    int // Seerr user the blocklist entries are attributed to
@@ -154,6 +155,7 @@ func loadConfig() Config {
 		SimklClientID:  getEnv("SIMKL_CLIENT_ID", ""),
 		SimklTokenFile: getEnv("SIMKL_TOKEN_FILE", "/data/simkl.json"),
 		SimklInterval:  getDuration("SIMKL_INTERVAL", 6*time.Hour),
+		SimklRulesFile: getEnv("SIMKL_RULES_FILE", "/data/simkl-rules.json"),
 		SeerrURL:       strings.TrimRight(getEnv("SEERR_URL", ""), "/"),
 		SeerrAPIKey:    getEnv("SEERR_API_KEY", ""),
 		SeerrUserID:    getInt("SEERR_USER_ID", 1),

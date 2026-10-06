@@ -255,3 +255,35 @@ func TestSimklCollectionRuleUsesPlex(t *testing.T) {
 		t.Errorf("Not Yet (tmdb 106) is in Plex's collection and should be unmonitored; puts %v", fsvc.moviePuts)
 	}
 }
+
+func TestSimklRulesActOncePerMovie(t *testing.T) {
+	a, _, fsvc, _ := simklApp(t, time.Now())
+	a.Config.SimklRulesFile = filepath.Join(t.TempDir(), "rules.json")
+	a.SimklSync()
+	if len(fsvc.moviePuts) != 2 || len(fsvc.exclusions) != 1 {
+		t.Fatalf("first run: puts %v exclusions %v", fsvc.moviePuts, fsvc.exclusions)
+	}
+	// The owner monitors both movies again and deletes the exclusion (the fake keeps reporting them monitored and
+	// unexcluded): the rules must not undo that.
+	fsvc.moviePuts, fsvc.exclusions = map[string]map[string]any{}, nil
+	a.SimklSync()
+	if len(fsvc.moviePuts) != 0 || len(fsvc.exclusions) != 0 {
+		t.Errorf("second run touched handled movies again: puts %v exclusions %v", fsvc.moviePuts, fsvc.exclusions)
+	}
+}
+
+func TestRuleMemorySeedsFromRadarr(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "rules.json")
+	movies := []map[string]any{
+		{"tmdbId": float64(1), "monitored": false, "hasFile": false}, // unmonitored earlier (e.g. Spider-Man)
+		{"tmdbId": float64(2), "monitored": true, "hasFile": false},
+		{"tmdbId": float64(3), "monitored": false, "hasFile": true},
+	}
+	m := loadRuleMemory(p, movies, map[int]bool{9: true})
+	if len(m.Unmonitored) != 1 || m.Unmonitored[1] == "" || m.Excluded[9] == "" {
+		t.Fatalf("seed %+v", m)
+	}
+	if again := loadRuleMemory(p, nil, nil); again.Unmonitored[1] == "" || again.Excluded[9] == "" {
+		t.Fatalf("not persisted: %+v", again)
+	}
+}

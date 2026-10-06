@@ -44,10 +44,13 @@ func TestCheckDownloadsRejectsFakesAndStalled(t *testing.T) {
 	ago := func(d time.Duration) int64 { return now.Add(-d).Unix() }
 	torrents := []Torrent{
 		{Hash: "aaa", Name: "fake", State: "stoppedUP"},
-		{Hash: "bbb", Name: "no metadata", State: "metaDL", AmountLeft: 1, AddedOn: ago(14 * time.Hour)},
+		// no metadata: size unknown, so amount_left is 0 (as qBittorrent reports it)
+		{Hash: "bbb", Name: "no metadata", State: "metaDL", AddedOn: ago(14 * time.Hour), LastActivity: ago(14 * time.Hour)},
 		{Hash: "ccc", Name: "stalled lately", State: "stalledDL", AmountLeft: 1, AddedOn: ago(30 * time.Hour), LastActivity: ago(2 * time.Hour)},
-		{Hash: "ddd", Name: "downloading", State: "downloading", AmountLeft: 1, AddedOn: ago(20 * time.Hour)},
+		{Hash: "ddd", Name: "slow but moving", State: "downloading", AmountLeft: 1, Progress: 0.02, AddedOn: ago(20 * time.Hour), LastActivity: ago(5 * time.Minute)},
 		{Hash: "eee", Name: "stalled long", State: "stalledDL", AmountLeft: 1, AddedOn: ago(40 * time.Hour), LastActivity: ago(13 * time.Hour)},
+		{Hash: "fff", Name: "connected, no data", State: "downloading", AmountLeft: 1, AddedOn: ago(14 * time.Hour), LastActivity: ago(14 * time.Hour)},
+		{Hash: "ggg", Name: "queued", State: "queuedDL", AmountLeft: 1, AddedOn: ago(40 * time.Hour)},
 	}
 	msg := func(m string) []map[string]any { return []map[string]any{{"messages": []string{m}}} }
 	_, qsrv := newFakeQbt(t, torrents, nil)
@@ -59,6 +62,8 @@ func TestCheckDownloadsRejectsFakesAndStalled(t *testing.T) {
 		{"id": 4, "title": "Fine", "downloadId": "DDD", "protocol": "torrent", "trackedDownloadState": "downloading"},
 		{"id": 5, "title": "Import pending, normal", "downloadId": "XXX", "protocol": "torrent", "trackedDownloadState": "importPending",
 			"statusMessages": msg("Episode has a TBA title and recently aired")},
+		{"id": 6, "title": "Bad Monkey S01E03", "downloadId": "FFF", "protocol": "torrent", "trackedDownloadState": "downloading"},
+		{"id": 7, "title": "Waiting for a slot", "downloadId": "GGG", "protocol": "torrent", "trackedDownloadState": "downloading"},
 	})
 	fr, rsrv := newFakeQueue(t, []map[string]any{
 		{"id": 9, "title": "Me Time", "downloadId": "EEE", "protocol": "torrent", "trackedDownloadState": "downloading"},
@@ -72,7 +77,7 @@ func TestCheckDownloadsRejectsFakesAndStalled(t *testing.T) {
 	a.Radarr = NewArr(rsrv.URL, "k")
 	a.CheckDownloads()
 	sort.Strings(fs.rejected)
-	if strings.Join(fs.rejected, ",") != "1,2" || strings.Join(fr.rejected, ",") != "9" {
+	if strings.Join(fs.rejected, ",") != "1,2,6" || strings.Join(fr.rejected, ",") != "9" {
 		t.Errorf("rejected sonarr %v radarr %v, want the fake and the long-stalled downloads only", fs.rejected, fr.rejected)
 	}
 
