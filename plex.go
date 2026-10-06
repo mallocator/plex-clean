@@ -62,20 +62,24 @@ func (p *Plex) CollectionMovies() (map[int]bool, error) {
 		if d.Type != "movie" || !inRoot {
 			continue
 		}
+		// Items carry both "guid" (a string) and "Guid" (the external IDs); encoding/json matches keys
+		// case-insensitively, so pick "Guid" by hand.
 		var items struct {
 			MediaContainer struct {
-				Metadata []struct {
-					Guid []struct {
-						ID string `json:"id"`
-					} `json:"Guid"`
-				} `json:"Metadata"`
+				Metadata []map[string]json.RawMessage `json:"Metadata"`
 			} `json:"MediaContainer"`
 		}
 		if err := p.get("/library/sections/"+d.Key+"/all?type=1&includeGuids=1", &items); err != nil {
 			return nil, err
 		}
 		for _, m := range items.MediaContainer.Metadata {
-			for _, g := range m.Guid {
+			var guids []struct {
+				ID string `json:"id"`
+			}
+			if raw, ok := m["Guid"]; !ok || json.Unmarshal(raw, &guids) != nil {
+				continue
+			}
+			for _, g := range guids {
 				var id int
 				if _, err := fmt.Sscanf(g.ID, "tmdb://%d", &id); err == nil {
 					ids[id] = true

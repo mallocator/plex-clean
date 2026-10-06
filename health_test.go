@@ -100,7 +100,7 @@ func TestPlexCollectionMovies(t *testing.T) {
 			for _, id := range ids {
 				g = append(g, map[string]any{"id": id})
 			}
-			return map[string]any{"Guid": g}
+			return map[string]any{"guid": "plex://movie/5d776", "Guid": g} // Plex sends both keys
 		}
 		var mc any
 		switch r.URL.Path {
