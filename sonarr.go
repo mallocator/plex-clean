@@ -9,12 +9,21 @@ import (
 	"time"
 )
 
-// Sonarr is a minimal client for the Sonarr v3 API.
-type Sonarr struct {
+// Arr is a minimal client for the Sonarr/Radarr v3 API (same conventions in both).
+type Arr struct {
 	BaseURL string
 	APIKey  string
 	Client  *http.Client
 }
+
+func NewArr(baseURL, apiKey string) *Arr {
+	return &Arr{BaseURL: baseURL, APIKey: apiKey, Client: &http.Client{Timeout: 30 * time.Second}}
+}
+
+// Sonarr adds the episode lookups plex-clean needs.
+type Sonarr struct{ Arr }
+
+func (s *Sonarr) arr() *Arr { return &s.Arr }
 
 type SonarrSeries struct {
 	ID              int    `json:"id"`
@@ -47,10 +56,23 @@ type SonarrTag struct {
 }
 
 func NewSonarr(baseURL, apiKey string) *Sonarr {
-	return &Sonarr{BaseURL: baseURL, APIKey: apiKey, Client: &http.Client{Timeout: 30 * time.Second}}
+	return &Sonarr{Arr: *NewArr(baseURL, apiKey)}
 }
 
-func (s *Sonarr) do(method, path string, body any, out any) error {
+// TagMap returns tag labels by ID.
+func (s *Arr) TagMap() (map[int]string, error) {
+	var tags []SonarrTag
+	if err := s.do("GET", "/api/v3/tag", nil, &tags); err != nil {
+		return nil, err
+	}
+	m := map[int]string{}
+	for _, t := range tags {
+		m[t.ID] = t.Label
+	}
+	return m, nil
+}
+
+func (s *Arr) do(method, path string, body any, out any) error {
 	var rd io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -69,12 +91,12 @@ func (s *Sonarr) do(method, path string, body any, out any) error {
 	}
 	resp, err := s.Client.Do(req)
 	if err != nil {
-		return fmt.Errorf("sonarr %s %s: %w", method, path, err)
+		return fmt.Errorf("%s %s %s: %w", s.BaseURL, method, path, err)
 	}
 	defer resp.Body.Close()
 	if !isSuccess(resp.StatusCode) {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		return fmt.Errorf("sonarr %s %s: %s %s", method, path, resp.Status, bytes.TrimSpace(msg))
+		return fmt.Errorf("%s %s %s: %s %s", s.BaseURL, method, path, resp.Status, bytes.TrimSpace(msg))
 	}
 	if out != nil {
 		return json.NewDecoder(resp.Body).Decode(out)

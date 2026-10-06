@@ -18,6 +18,7 @@ type App struct {
 	Queue  *Queue
 	Sonarr *Sonarr
 	Qbt    *Qbittorrent
+	Radarr *Arr
 	Now    func() time.Time // for tests
 }
 
@@ -78,6 +79,14 @@ func (a *App) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/plex", a.handlePlex)
 	mux.HandleFunc("/jellyfin", a.handleJellyfin)
+	// Sonarr/Radarr "Connect" webhooks (On Series/Movie Add): route new items right away.
+	arrHook := func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		go a.Route()
+		okResponse(w)
+	}
+	mux.HandleFunc("/sonarr", arrHook)
+	mux.HandleFunc("/radarr", arrHook)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	mux.HandleFunc("/pending", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

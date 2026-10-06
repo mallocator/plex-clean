@@ -6,7 +6,8 @@
 //   - DELETE_TAG (default "delete-after-watch"): the episode file is deleted through Sonarr.
 //   - ARCHIVE_TAG (default "archive"): the file is copied to ARCHIVE_DIR/<show>/Season NN/, then deleted through Sonarr.
 //
-// Both unmonitor the episode so Sonarr doesn't fetch it again. Shows Sonarr doesn't manage can be listed in
+// Both unmonitor the episode so Sonarr doesn't fetch it again. Shows and movies requested through Seerr are moved into
+// their requester's folder (USER_FOLDERS, see routing.go). Shows Sonarr doesn't manage can be listed in
 // ARCHIVE_SHOWS / DELETE_SHOWS instead; their files are found in SEARCH_DIRS by release name. Separately, a
 // periodic sweep removes completed qBittorrent torrents whose files are gone (formerly qbittorrent-cleaner).
 package main
@@ -39,6 +40,12 @@ type Config struct {
 	DeleteShows  []string
 	SearchDirs   []string
 
+	RadarrURL    string
+	RadarrAPIKey string
+	UserFolders  map[string]string // Seerr user name -> base folder (USER_FOLDERS)
+	TVSubdir     string
+	MovieSubdir  string
+
 	QbtURL         string
 	QbtUser        string
 	QbtPass        string
@@ -62,14 +69,18 @@ func main() {
 	if config.QbtURL != "" {
 		app.Qbt = NewQbittorrent(config.QbtURL, config.QbtUser, config.QbtPass)
 	}
+	if config.RadarrURL != "" {
+		app.Radarr = NewArr(config.RadarrURL, config.RadarrAPIKey)
+	}
 
-	go loop(config.CheckInterval, app.ProcessDue)
+	go loop(config.CheckInterval, func() { app.Route(); app.ProcessDue() })
 	if app.Qbt != nil && config.SweepInterval > 0 {
 		go loop(config.SweepInterval, app.Sweep)
 	}
 
-	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, sweep %v)",
-		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Qbt != nil && config.SweepInterval > 0)
+	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d)",
+		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Radarr != nil,
+		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders))
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), app.Routes()))
 }
 
@@ -99,6 +110,12 @@ func loadConfig() Config {
 		ArchiveShows: splitList(getEnv("ARCHIVE_SHOWS", "")),
 		DeleteShows:  splitList(getEnv("DELETE_SHOWS", "")),
 		SearchDirs:   splitList(getEnv("SEARCH_DIRS", "/downloads/ravi,/downloads/daniela")),
+
+		RadarrURL:    strings.TrimRight(getEnv("RADARR_URL", ""), "/"),
+		RadarrAPIKey: getEnv("RADARR_API_KEY", ""),
+		UserFolders:  parseMap(getEnv("USER_FOLDERS", "")),
+		TVSubdir:     getEnv("TV_SUBDIR", "tv"),
+		MovieSubdir:  getEnv("MOVIE_SUBDIR", "movies"),
 
 		QbtURL:         strings.TrimRight(getEnv("QBT_URL", ""), "/"),
 		QbtUser:        getEnv("QBT_USER", ""),
@@ -133,6 +150,17 @@ func getDuration(key string, defaultValue time.Duration) time.Duration {
 		return defaultValue
 	}
 	return v
+}
+
+// parseMap reads "a=x,b=y".
+func parseMap(s string) map[string]string {
+	m := map[string]string{}
+	for _, p := range splitList(s) {
+		if k, v, ok := strings.Cut(p, "="); ok {
+			m[strings.TrimSpace(k)] = strings.TrimRight(strings.TrimSpace(v), "/")
+		}
+	}
+	return m
 }
 
 func splitList(s string) []string {
