@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -173,5 +174,24 @@ func TestNormalizeTitle(t *testing.T) {
 		if got := normalizeTitle(in); got != want {
 			t.Errorf("normalizeTitle(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestLooseEpisodeReportedAsMovieIsQueued(t *testing.T) {
+	a := newTestApp(t)
+	rec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(rec, jellyfinRequest(`{"NotificationType":"PlaybackStop","ItemType":"Movie","Name":"The Great British Bake Off S17E01 Cake Week","PlayedToCompletion":true}`))
+	a.Routes().ServeHTTP(httptest.NewRecorder(), plexRequest(t, `{"event":"media.scrobble","Metadata":{"type":"movie","title":"Bad.Monkey.2024.S01E09.1080p"}}`))
+	a.Routes().ServeHTTP(httptest.NewRecorder(), jellyfinRequest(`{"NotificationType":"PlaybackStop","ItemType":"Movie","Name":"Snatch","PlayedToCompletion":true}`))
+	items := a.Queue.Items()
+	if len(items) != 2 {
+		t.Fatalf("queued %+v, want the two episodes but not the movie", items)
+	}
+	got := map[string]bool{}
+	for _, it := range items {
+		got[fmt.Sprintf("%s S%02dE%02d", it.Series, it.Season, it.Episode)] = true
+	}
+	if !got["The Great British Bake Off S17E01"] || !got["Bad Monkey S01E09"] {
+		t.Errorf("queued %v", got)
 	}
 }

@@ -32,14 +32,15 @@ type Config struct {
 	DryRun        bool
 	Debug         bool
 
-	SonarrURL    string
-	SonarrAPIKey string
-	DeleteTag    string
-	ArchiveTag   string
-	ArchiveDir   string
-	ArchiveShows []string // shows not in Sonarr, handled by file name (see files.go)
-	DeleteShows  []string
-	SearchDirs   []string
+	SonarrURL       string
+	SonarrAPIKey    string
+	DeleteTag       string
+	ArchiveTag      string
+	ArchiveDir      string
+	AnimeArchiveDir string   // archive for Sonarr series of type anime; empty uses ArchiveDir
+	ArchiveShows    []string // shows not in Sonarr, handled by file name (see files.go)
+	DeleteShows     []string
+	SearchDirs      []string
 
 	RadarrURL    string
 	RadarrAPIKey string
@@ -53,6 +54,8 @@ type Config struct {
 	SeerrURL       string
 	SeerrAPIKey    string
 	SeerrUserID    int // Seerr user the blocklist entries are attributed to
+	PlexURL        string
+	PlexCollection string // Plex movie sections below this path are the collection (collection rule)
 
 	QbtURL         string
 	QbtUser        string
@@ -61,6 +64,7 @@ type Config struct {
 	SweepRoot      string        // only torrents saved below this path are swept
 	SweepSkipCats  []string      // categories managed elsewhere (Sonarr/Radarr remove their own torrents)
 	SweepMaxRemove int           // refuse a sweep removing more than this many torrents and over half of them (missing mount)
+	StallTimeout   time.Duration // Sonarr/Radarr torrents without data for this long are rejected; 0 disables
 }
 
 func main() {
@@ -84,10 +88,13 @@ func main() {
 		app.Simkl = NewSimkl(config.SimklClientID, config.SimklTokenFile)
 		app.Seerr = NewSeerr(config.SeerrURL, config.SeerrAPIKey, config.SeerrUserID)
 	}
+	if config.PlexURL != "" {
+		app.Plex = NewPlex(config.PlexURL, config.PlexCollection)
+	}
 
 	go loop(config.CheckInterval, func() { app.Route(); app.ProcessDue() })
 	if app.Qbt != nil && config.SweepInterval > 0 {
-		go loop(config.SweepInterval, app.Sweep)
+		go loop(config.SweepInterval, func() { app.Sweep(); app.CheckDownloads() })
 	}
 	if app.Simkl != nil && config.SimklInterval > 0 {
 		go loopRetry(config.SimklInterval, 10*time.Minute, app.SimklSync)
@@ -128,14 +135,15 @@ func loadConfig() Config {
 		DryRun:        getEnv("DRY_RUN", "false") == "true",
 		Debug:         getEnv("DEBUG", "false") == "true",
 
-		SonarrURL:    strings.TrimRight(getEnv("SONARR_URL", ""), "/"),
-		SonarrAPIKey: getEnv("SONARR_API_KEY", ""),
-		DeleteTag:    getEnv("DELETE_TAG", "delete-after-watch"),
-		ArchiveTag:   getEnv("ARCHIVE_TAG", "archive"),
-		ArchiveDir:   getEnv("ARCHIVE_DIR", "/archive"),
-		ArchiveShows: splitList(getEnv("ARCHIVE_SHOWS", "")),
-		DeleteShows:  splitList(getEnv("DELETE_SHOWS", "")),
-		SearchDirs:   splitList(getEnv("SEARCH_DIRS", "/downloads/ravi,/downloads/daniela")),
+		SonarrURL:       strings.TrimRight(getEnv("SONARR_URL", ""), "/"),
+		SonarrAPIKey:    getEnv("SONARR_API_KEY", ""),
+		DeleteTag:       getEnv("DELETE_TAG", "delete-after-watch"),
+		ArchiveTag:      getEnv("ARCHIVE_TAG", "archive"),
+		ArchiveDir:      getEnv("ARCHIVE_DIR", "/archive"),
+		AnimeArchiveDir: getEnv("ANIME_ARCHIVE_DIR", ""),
+		ArchiveShows:    splitList(getEnv("ARCHIVE_SHOWS", "")),
+		DeleteShows:     splitList(getEnv("DELETE_SHOWS", "")),
+		SearchDirs:      splitList(getEnv("SEARCH_DIRS", "/downloads/ravi,/downloads/daniela")),
 
 		RadarrURL:    strings.TrimRight(getEnv("RADARR_URL", ""), "/"),
 		RadarrAPIKey: getEnv("RADARR_API_KEY", ""),
@@ -149,6 +157,8 @@ func loadConfig() Config {
 		SeerrURL:       strings.TrimRight(getEnv("SEERR_URL", ""), "/"),
 		SeerrAPIKey:    getEnv("SEERR_API_KEY", ""),
 		SeerrUserID:    getInt("SEERR_USER_ID", 1),
+		PlexURL:        strings.TrimRight(getEnv("PLEX_URL", ""), "/"),
+		PlexCollection: getEnv("PLEX_COLLECTION_ROOT", "/volume1/Video"),
 
 		QbtURL:         strings.TrimRight(getEnv("QBT_URL", ""), "/"),
 		QbtUser:        getEnv("QBT_USER", ""),
@@ -157,6 +167,7 @@ func loadConfig() Config {
 		SweepRoot:      getEnv("SWEEP_ROOT", "/downloads"),
 		SweepSkipCats:  splitList(getEnv("SWEEP_SKIP_CATEGORIES", "sonarr,radarr")),
 		SweepMaxRemove: getInt("SWEEP_MAX_REMOVE", 5),
+		StallTimeout:   getDuration("STALL_TIMEOUT", 12*time.Hour),
 	}
 }
 

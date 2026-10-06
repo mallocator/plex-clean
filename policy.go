@@ -78,13 +78,23 @@ func (a *App) apply(it PendingItem) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	archiveRoot := a.Config.ArchiveDir
+	if series.SeriesType == "anime" && a.Config.AnimeArchiveDir != "" {
+		archiveRoot = a.Config.AnimeArchiveDir
+	}
+	archiveDst := func(f string) string {
+		return filepath.Join(archiveRoot, filepath.Base(series.Path), fmt.Sprintf("Season %02d", it.Season), filepath.Base(f))
+	}
 	if ep == nil || !ep.HasFile || ep.EpisodeFileID == 0 {
-		// Sonarr knows the show but not this file (e.g. an import list added a show that a qBittorrent RSS
-		// rule downloads): the name rules still apply to it.
+		// Sonarr knows the show but not this file: downloaded by a qBittorrent RSS rule (before the show moved
+		// to Sonarr, or a show an import list added). ARCHIVE_SHOWS/DELETE_SHOWS win; otherwise the show's tag
+		// applies to the file found by name.
 		if handled, err := a.applyByName(it); handled || err != nil {
 			return err == nil, err
 		}
-		log.Printf("%s: no file in Sonarr (already removed?)", it)
+		if err := a.applyToFiles(it, action, archiveDst); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	file, err := a.Sonarr.EpisodeFile(ep.EpisodeFileID)
@@ -93,8 +103,7 @@ func (a *App) apply(it PendingItem) (bool, error) {
 	}
 
 	if action == "archive" {
-		dst := filepath.Join(a.Config.ArchiveDir, filepath.Base(series.Path),
-			fmt.Sprintf("Season %02d", it.Season), filepath.Base(file.Path))
+		dst := archiveDst(file.Path)
 		if a.Config.DryRun {
 			log.Printf("[dry run] %s: would copy %s to %s, then delete it in Sonarr", it, file.Path, dst)
 			return true, nil

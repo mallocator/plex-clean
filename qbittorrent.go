@@ -21,12 +21,14 @@ type Qbittorrent struct {
 }
 
 type Torrent struct {
-	Hash       string `json:"hash"`
-	Name       string `json:"name"`
-	AmountLeft int64  `json:"amount_left"`
-	State      string `json:"state"`
-	Category   string `json:"category"`
-	SavePath   string `json:"save_path"`
+	Hash         string `json:"hash"`
+	Name         string `json:"name"`
+	AmountLeft   int64  `json:"amount_left"`
+	State        string `json:"state"`
+	Category     string `json:"category"`
+	SavePath     string `json:"save_path"`
+	AddedOn      int64  `json:"added_on"`      // unix time
+	LastActivity int64  `json:"last_activity"` // unix time of the last data transfer
 }
 
 type TorrentFile struct {

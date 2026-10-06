@@ -21,6 +21,7 @@ type App struct {
 	Radarr *Arr
 	Simkl  *Simkl
 	Seerr  *Seerr
+	Plex   *Plex
 	Now    func() time.Time // for tests
 }
 
@@ -133,16 +134,25 @@ func (a *App) handlePlex(w http.ResponseWriter, r *http.Request) {
 		okResponse(w)
 		return
 	}
-	switch p.Metadata.Type {
-	case "episode":
+	switch {
+	case p.Metadata.Type == "episode":
 		a.Watched(WatchEvent{Source: "plex", Type: "episode", Series: p.Metadata.GrandparentTitle,
 			Season: p.Metadata.ParentIndex, Episode: p.Metadata.Index, Title: p.Metadata.Title})
-	case "movie":
-		a.Watched(WatchEvent{Source: "plex", Type: "movie", Title: p.Metadata.Title})
+	case p.Metadata.Type == "movie":
+		a.Watched(movieOrEpisode("plex", p.Metadata.Title))
 	default:
-		a.debugf("Ignoring Plex scrobble of type %s", p.Metadata.Type)
+		log.Printf("Ignoring Plex scrobble of %s (type %s)", p.Metadata.Title, p.Metadata.Type)
 	}
 	okResponse(w)
+}
+
+// movieOrEpisode turns a watched "movie" into an episode when its title is a release name ("Show S17E01 ..."):
+// loose episode files in a download folder show up as movies in Jellyfin's mixed libraries and Plex movie libraries.
+func movieOrEpisode(source, title string) WatchEvent {
+	if show, season, episode, ok := parseRelease(title); ok && show != "" {
+		return WatchEvent{Source: source, Type: "episode", Series: releaseShowName(title), Season: season, Episode: episode, Title: title}
+	}
+	return WatchEvent{Source: source, Type: "movie", Title: title}
 }
 
 func (a *App) handleJellyfin(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +176,7 @@ func (a *App) handleJellyfin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !p.PlayedToCompletion && !p.MediaStatus.PlayedToCompletion {
-		a.debugf("Jellyfin playback of %s not completed", p.Title)
+		log.Printf("Jellyfin: playback of %s stopped before the end", p.Title)
 		okResponse(w)
 		return
 	}
@@ -174,10 +184,10 @@ func (a *App) handleJellyfin(w http.ResponseWriter, r *http.Request) {
 	case p.ItemType == "Episode" && p.SeriesName != "":
 		a.Watched(WatchEvent{Source: "jellyfin", Type: "episode", Series: p.SeriesName,
 			Season: p.SeasonNumber, Episode: p.EpisodeNumber, Title: p.Title})
-	case p.ItemType == "Movie":
-		a.Watched(WatchEvent{Source: "jellyfin", Type: "movie", Title: p.Title})
+	case p.ItemType == "Movie" || p.ItemType == "Video" || p.ItemType == "Episode":
+		a.Watched(movieOrEpisode("jellyfin", p.Title))
 	default:
-		a.debugf("Unsupported Jellyfin item type %s", p.ItemType)
+		log.Printf("Jellyfin: ignoring %s (item type %s)", p.Title, p.ItemType)
 	}
 	okResponse(w)
 }

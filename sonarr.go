@@ -30,6 +30,7 @@ type SonarrSeries struct {
 	Title           string `json:"title"`
 	CleanTitle      string `json:"cleanTitle"`
 	Path            string `json:"path"`
+	SeriesType      string `json:"seriesType"` // standard, daily, anime
 	Tags            []int  `json:"tags"`
 	AlternateTitles []struct {
 		Title string `json:"title"`

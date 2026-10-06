@@ -238,3 +238,20 @@ func TestSeenInCinema(t *testing.T) {
 		}
 	}
 }
+
+func TestSimklCollectionRuleUsesPlex(t *testing.T) {
+	a, _, fsvc, _ := simklApp(t, time.Now())
+	plex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/library/sections" {
+			fmt.Fprint(w, `{"MediaContainer":{"Directory":[{"key":"4","type":"movie","Location":[{"path":"/volume1/Video/Movies"}]}]}}`)
+			return
+		}
+		fmt.Fprint(w, `{"MediaContainer":{"Metadata":[{"Guid":[{"id":"tmdb://106"}]}]}}`)
+	}))
+	defer plex.Close()
+	a.Plex = NewPlex(plex.URL, "/volume1/Video")
+	a.SimklSync()
+	if fsvc.moviePuts["/api/v3/movie/9"]["monitored"] != false {
+		t.Errorf("Not Yet (tmdb 106) is in Plex's collection and should be unmonitored; puts %v", fsvc.moviePuts)
+	}
+}

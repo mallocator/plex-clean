@@ -52,6 +52,37 @@ func parseRelease(name string) (show string, season, episode int, ok bool) {
 	return normalizeTitle(norm[:m[0]]), season, episode, true
 }
 
+// releaseToken finds the episode token in an unnormalized release name, for releaseShowName.
+var releaseToken = regexp.MustCompile(`(?i)[\s._-]+(?:s\d{1,2}[\s._]?e\d{1,3}|\d{1,2}x\d{2,3})(?:[\s._-]|e\d|$)`)
+
+// trailingYear matches a release year after a show name ("Bad Monkey 2024").
+var trailingYear = regexp.MustCompile(`\s+\(?(?:19|20)\d{2}\)?$`)
+
+// releaseShowName returns the readable show name before the episode token: "The.Great.British.Bake.Off.S17E01" ->
+// "The Great British Bake Off". A release year is dropped, as Sonarr titles don't carry it.
+func releaseShowName(name string) string {
+	loc := releaseToken.FindStringIndex(name)
+	if loc == nil {
+		return name
+	}
+	show := strings.Join(strings.Fields(strings.NewReplacer(".", " ", "_", " ").Replace(name[:loc[0]])), " ")
+	show = strings.Trim(show, " -")
+	if t := trailingYear.ReplaceAllString(show, ""); t != "" {
+		show = t
+	}
+	return show
+}
+
+// sameShow compares normalized names, allowing a release year after the show name ("badmonkey2024").
+func sameShow(release, want string) bool {
+	if release == want {
+		return true
+	}
+	n := len(release)
+	return n > 4 && release[:n-4] == want && (strings.HasPrefix(release[n-4:], "19") || strings.HasPrefix(release[n-4:], "20")) &&
+		strings.Trim(release[n-4:], "0123456789") == ""
+}
+
 // findEpisodeFiles returns the video files below dirs whose release name matches the show and episode.
 func findEpisodeFiles(dirs []string, series string, season, episode int) []string {
 	want := normalizeTitle(series)
@@ -75,7 +106,7 @@ func findEpisodeFiles(dirs []string, series string, season, episode int) []strin
 				return nil
 			}
 			// The show name may also be in the parent folder only ("Show S01/S01E02.mkv").
-			if show == want || (show == "" && strings.HasPrefix(normalizeTitle(filepath.Base(filepath.Dir(path))), want)) {
+			if sameShow(show, want) || (show == "" && strings.HasPrefix(normalizeTitle(filepath.Base(filepath.Dir(path))), want)) {
 				found = append(found, path)
 			}
 			return nil
@@ -103,27 +134,34 @@ func (a *App) applyByName(it PendingItem) (handled bool, err error) {
 	if action == "" {
 		return false, nil
 	}
+	return true, a.applyToFiles(it, action, func(f string) string {
+		return filepath.Join(a.Config.ArchiveDir, archiveName, filepath.Base(f))
+	})
+}
+
+// applyToFiles deletes, or moves to archiveDst(file), the episode's files found by release name in SEARCH_DIRS.
+func (a *App) applyToFiles(it PendingItem, action string, archiveDst func(string) string) error {
 	files := findEpisodeFiles(a.Config.SearchDirs, it.Series, it.Season, it.Episode)
 	if len(files) == 0 {
 		log.Printf("%s: no file found in %s (already moved or deleted?)", it, strings.Join(a.Config.SearchDirs, ", "))
-		return true, nil
+		return nil
 	}
 	for _, f := range files {
 		if action == "archive" {
-			dst := filepath.Join(a.Config.ArchiveDir, archiveName, filepath.Base(f))
+			dst := archiveDst(f)
 			if a.Config.DryRun {
 				log.Printf("[dry run] %s: would move %s to %s", it, f, dst)
 				continue
 			}
 			st, err := os.Stat(f)
 			if err != nil {
-				return true, err
+				return err
 			}
 			if err := copyFile(f, dst, st.Size()); err != nil {
-				return true, fmt.Errorf("archiving to %s: %w", dst, err)
+				return fmt.Errorf("archiving to %s: %w", dst, err)
 			}
 			if err := os.Remove(f); err != nil {
-				return true, err
+				return err
 			}
 			log.Printf("%s: moved %s to %s", it, f, dst)
 		} else {
@@ -132,10 +170,10 @@ func (a *App) applyByName(it PendingItem) (handled bool, err error) {
 				continue
 			}
 			if err := os.Remove(f); err != nil {
-				return true, err
+				return err
 			}
 			log.Printf("%s: deleted %s", it, f)
 		}
 	}
-	return true, nil
+	return nil
 }

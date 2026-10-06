@@ -160,3 +160,49 @@ func TestNameRuleAppliesWhenSonarrHasNoFile(t *testing.T) {
 		t.Fatal("item should leave the queue")
 	}
 }
+
+func TestSonarrTagAppliesToFilesFoundByName(t *testing.T) {
+	a, fs := appWithSonarr(t)
+	dl := t.TempDir()
+	a.Config.SearchDirs = []string{dl}
+	a.Config.ArchiveDir = t.TempDir()
+	a.Config.AnimeArchiveDir = t.TempDir()
+	// downloaded by RSS rules before the shows moved to Sonarr: Sonarr has no file for these episodes
+	for _, n := range []string{"The.Simpsons.S38E05.1080p.mkv", "Futurama S14E01 1080p.mkv", "Frieren.S02E03.1080p.mkv"} {
+		os.WriteFile(filepath.Join(dl, n), []byte("x"), 0644)
+	}
+	watch(a, "The Simpsons", 38, 5, 25*time.Hour) // delete-after-watch
+	watch(a, "Futurama", 14, 1, 25*time.Hour)     // archive
+	watch(a, "Frieren", 2, 3, 25*time.Hour)       // archive, anime
+	a.ProcessDue()
+	if _, err := os.Stat(filepath.Join(dl, "The.Simpsons.S38E05.1080p.mkv")); !os.IsNotExist(err) {
+		t.Error("tagged delete-after-watch: file should be deleted")
+	}
+	if _, err := os.Stat(filepath.Join(a.Config.ArchiveDir, "Futurama", "Season 14", "Futurama S14E01 1080p.mkv")); err != nil {
+		t.Errorf("tagged archive: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(a.Config.AnimeArchiveDir, "Frieren", "Season 02", "Frieren.S02E03.1080p.mkv")); err != nil {
+		t.Errorf("anime goes to the anime archive: %v", err)
+	}
+	if len(fs.deleted) != 0 || len(a.Queue.Items()) != 0 {
+		t.Errorf("sonarr deletes %v, queue %v", fs.deleted, a.Queue.Items())
+	}
+}
+
+func TestReleaseShowName(t *testing.T) {
+	for in, want := range map[string]string{
+		"The Great British Bake Off S17E01 Cake Week":              "The Great British Bake Off",
+		"Bad.Monkey.2024.S01E09.1080p.ATVP.WEB-DL":                 "Bad Monkey",
+		"star.trek.strange.new.worlds.s04e05.1080p.web.h264-cakes": "star trek strange new worlds",
+		"Lanterns - S01E02 - Trust Fall":                           "Lanterns",
+		"1883 S01E01":                                              "1883",
+		"Some Movie (2010)":                                        "Some Movie (2010)",
+	} {
+		if got := releaseShowName(in); got != want {
+			t.Errorf("releaseShowName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if !sameShow("badmonkey2024", "badmonkey") || sameShow("badmonkey2024", "bad") || !sameShow("lucky", "lucky") {
+		t.Error("sameShow")
+	}
+}

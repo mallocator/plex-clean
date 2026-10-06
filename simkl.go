@@ -331,8 +331,17 @@ func (a *App) SimklSync() bool {
 		}
 		removed++
 	}
-	// collection rule: wanted movies that are already in the library
+	// collection rule: wanted movies that are already in the library (Plex's curated sections, or Seerr's view of Jellyfin)
 	haveCopy := map[int]bool{}
+	if a.Plex != nil {
+		owned, err := a.Plex.CollectionMovies()
+		if err != nil {
+			log.Printf("Simkl: plex collection: %v", err)
+		}
+		for id := range owned {
+			haveCopy[id] = true
+		}
+	}
 	if a.Radarr != nil {
 		var excl []map[string]any
 		if err := a.Radarr.do("GET", "/api/v3/exclusions", nil, &excl); err != nil {
@@ -346,7 +355,7 @@ func (a *App) SimklSync() bool {
 		}
 		for k := range want {
 			avail, title, year, err := a.Seerr.MovieAvailable(k.TMDB)
-			if err != nil || !avail {
+			if err != nil || !(avail || haveCopy[k.TMDB]) {
 				continue
 			}
 			haveCopy[k.TMDB] = true

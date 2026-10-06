@@ -5,12 +5,15 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 1. **Watched events** come from Plex webhooks (`media.scrobble`, needs Plex Pass) and the Jellyfin
    [Webhook plugin](https://github.com/jellyfin/jellyfin-plugin-webhook) (Playback Stop, played to completion).
    No Tautulli needed. Every watched item gets a marker file in `OUTPUT_DIR` (same format as before).
+   A "movie" whose title is a release name (`Show S17E01 ...`) counts as that episode: loose episode files in a
+   download folder show up as movies in Jellyfin's mixed libraries.
 2. **Episodes wait a grace period** (default 24 h) in a persistent queue, so you can rewatch or catch up.
    Watching the same episode again, or in the other server, doesn't restart the clock.
 3. **Then the show's rule applies:**
    - Shows managed by **Sonarr** use tags: `delete-after-watch` deletes the episode file through Sonarr;
-     `archive` copies it to `ARCHIVE_DIR/<show>/Season NN/` first. Both unmonitor the episode so Sonarr
-     won't fetch it again.
+     `archive` copies it to `ARCHIVE_DIR/<show>/Season NN/` first (`ANIME_ARCHIVE_DIR` for anime series). Both
+     unmonitor the episode so Sonarr won't fetch it again. If Sonarr has no file for the episode (downloaded by an
+     RSS rule before the show moved to Sonarr), the tag applies to the file found by name, as below.
    - Shows **not in Sonarr** (e.g. downloaded by qBittorrent RSS rules) can be listed in `ARCHIVE_SHOWS` or
      `DELETE_SHOWS`. Their file is found in `SEARCH_DIRS` by release name (`Show.Name.S14E10...`, `1x10`);
      archive moves it to `ARCHIVE_DIR/<show>/` keeping its name. These name rules also apply to a show Sonarr
@@ -27,6 +30,8 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 5. **Simkl sync** (every `SIMKL_INTERVAL`): keeps Seerr and Radarr in line with the owner's Simkl lists.
    - Seerr blocklist (hidden from discovery): movies completed or dropped; shows/anime watching, completed, dropped
      or on hold. Titles Sonarr/Radarr manage are skipped; movies back on "plan to watch"/"watching" are unblocked.
+   - The collection is Plex's movie sections below `PLEX_COLLECTION_ROOT` (Plex matches the curated library far
+     better than Jellyfin) plus whatever Seerr reports as available.
    - Cinema rule: a movie completed in Simkl before its home release (watch date earlier than the digital or
      physical release) is unmonitored in Radarr if it hasn't been downloaded.
    - Collection rule: a wanted movie Seerr already reports as available (Jellyfin library) gets a Radarr exclusion
@@ -37,6 +42,9 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    are gone are removed from qBittorrent. It checks each torrent's own save path, skips categories managed by
    Sonarr/Radarr, and refuses to run if the downloads share looks unmounted or if more than `SWEEP_MAX_REMOVE`
    torrents, and over half of them, look deleted at once.
+7. **Download health** (with the sweep): Sonarr/Radarr downloads that will never import are removed from qBittorrent
+   through the app's queue, blocklisted, and searched again: fakes (an executable or archive instead of a video,
+   nothing importable) and torrents without any data for `STALL_TIMEOUT`. At most `SWEEP_MAX_REMOVE` per run.
 
 ## Configuration
 
@@ -51,19 +59,22 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 | `SONARR_URL`, `SONARR_API_KEY` | | Enables the Sonarr rules |
 | `DELETE_TAG`, `ARCHIVE_TAG` | `delete-after-watch`, `archive` | Sonarr tag labels |
 | `ARCHIVE_DIR` | `/archive` | Archive root |
+| `ANIME_ARCHIVE_DIR` | | Archive root for Sonarr series of type anime (default: `ARCHIVE_DIR`) |
 | `RADARR_URL`, `RADARR_API_KEY` | | Radarr for per-user movie folders |
 | `USER_FOLDERS` | | `2-daniela=/base,1-mallox=/base2` (Seerr tag labels; a plain name also routes but can't be created as a tag) |
 | `TV_SUBDIR`, `MOVIE_SUBDIR` | `tv`, `movies` | Subfolders below each user's base |
 | `SIMKL_CLIENT_ID`, `SIMKL_TOKEN_FILE` | , `/data/simkl.json` | Simkl app and token (`access_token`, `refresh_token`, `expires_in`, `obtained_at`) |
 | `SIMKL_INTERVAL` | `6h` | `0` disables the Simkl sync |
 | `SEERR_URL`, `SEERR_API_KEY`, `SEERR_USER_ID` | , , `1` | Seerr for the blocklist (entries attributed to that user) |
+| `PLEX_URL`, `PLEX_COLLECTION_ROOT` | , `/volume1/Video` | Plex local API (no token from an allowed network) for the collection rule |
 | `ARCHIVE_SHOWS`, `DELETE_SHOWS` | | Comma-separated show names for shows not in Sonarr |
 | `SEARCH_DIRS` | `/downloads/ravi,/downloads/daniela` | Where name-based rules look for files |
 | `QBT_URL`, `QBT_USER`, `QBT_PASS` | | Enables the torrent sweep; credentials optional on qBittorrent's auth whitelist |
 | `SWEEP_INTERVAL` | `15m` | `0` disables the sweep |
 | `SWEEP_ROOT` | `/downloads` | Only torrents saved below this path; must match qBittorrent's container path |
 | `SWEEP_SKIP_CATEGORIES` | `sonarr,radarr` | Categories whose torrents their apps remove |
-| `SWEEP_MAX_REMOVE` | `5` | Safety limit, see above |
+| `SWEEP_MAX_REMOVE` | `5` | Safety limit, see above; also the download health limit per run |
+| `STALL_TIMEOUT` | `12h` | Sonarr/Radarr torrents without data this long are rejected; `0` disables |
 | `DEBUG` | `false` | Verbose logging |
 
 Paths must be the same inside plex-clean, Sonarr and qBittorrent (mount the downloads share at `/downloads`

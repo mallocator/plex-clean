@@ -42,6 +42,7 @@ func newFakeSonarr(t *testing.T, mediaDir string) (*fakeSonarr, *httptest.Server
 		{"id": 2, "title": "Futurama", "path": "/downloads/tv/Futurama", "tags": []int{8},
 			"alternateTitles": []map[string]any{{"title": "Futurama (Hulu)"}}},
 		{"id": 3, "title": "Family Guy", "path": "/downloads/tv/Family Guy", "tags": []int{}},
+		{"id": 4, "title": "Frieren", "path": "/downloads/tv/Frieren", "tags": []int{8}, "seriesType": "anime"},
 	}
 	episodes := map[int][]SonarrEpisode{
 		1: {{ID: 101, SeasonNumber: 38, EpisodeNumber: 2, HasFile: true, EpisodeFileID: 11}},
