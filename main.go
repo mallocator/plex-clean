@@ -66,6 +66,9 @@ type Config struct {
 	SweepSkipCats  []string      // categories managed elsewhere (Sonarr/Radarr remove their own torrents)
 	SweepMaxRemove int           // refuse a sweep removing more than this many torrents and over half of them (missing mount)
 	StallTimeout   time.Duration // Sonarr/Radarr torrents without data for this long are rejected; 0 disables
+
+	DeleteRoots   []string // deletions only below these (the downloads share); see guard.go
+	ProtectedDirs []string // never deleted in, in addition to the archive directories
 }
 
 func main() {
@@ -170,6 +173,9 @@ func loadConfig() Config {
 		SweepSkipCats:  splitList(getEnv("SWEEP_SKIP_CATEGORIES", "sonarr,radarr")),
 		SweepMaxRemove: getInt("SWEEP_MAX_REMOVE", 5),
 		StallTimeout:   getDuration("STALL_TIMEOUT", 12*time.Hour),
+
+		DeleteRoots:   splitList(getEnv("DELETE_ROOTS", "/downloads")),
+		ProtectedDirs: splitList(getEnv("PROTECTED_DIRS", "")),
 	}
 }
 

@@ -50,6 +50,11 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    through the app's queue, blocklisted, and searched again: fakes (an executable or archive instead of a video,
    nothing importable) and torrents without any data for `STALL_TIMEOUT`. At most `SWEEP_MAX_REMOVE` per run.
 
+**The archive is never touched.** Every deletion (Sonarr episode files, files found by name, the torrent sweep,
+download health) first checks the path: it must be below `DELETE_ROOTS` (default `/downloads`) and outside
+`ARCHIVE_DIR`, `ANIME_ARCHIVE_DIR` and `PROTECTED_DIRS`. Archiving only copies into the archive. Anything else is
+refused and logged.
+
 ## Configuration
 
 | Variable | Default | |
@@ -80,6 +85,8 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 | `SWEEP_SKIP_CATEGORIES` | `sonarr,radarr` | Categories whose torrents their apps remove |
 | `SWEEP_MAX_REMOVE` | `5` | Safety limit, see above; also the download health limit per run |
 | `STALL_TIMEOUT` | `12h` | Sonarr/Radarr torrents without data this long are rejected; `0` disables |
+| `DELETE_ROOTS` | `/downloads` | Deletions only below these |
+| `PROTECTED_DIRS` | | Never deleted in, besides the archive dirs |
 | `DEBUG` | `false` | Verbose logging |
 
 Paths must be the same inside plex-clean, Sonarr and qBittorrent (mount the downloads share at `/downloads`

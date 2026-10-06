@@ -105,12 +105,19 @@ func (a *App) CheckDownloads() {
 			if q.Protocol != "" && q.Protocol != "torrent" {
 				continue
 			}
+			t, known := byHash[strings.ToLower(q.DownloadID)]
 			reason := q.unusable()
-			if t, ok := byHash[strings.ToLower(q.DownloadID)]; ok && reason == "" && a.Config.StallTimeout > 0 &&
-				stalled(t, a.now(), a.Config.StallTimeout) {
+			if known && reason == "" && a.Config.StallTimeout > 0 && stalled(t, a.now(), a.Config.StallTimeout) {
 				reason = fmt.Sprintf("stalled (%s) for over %s", t.State, a.Config.StallTimeout)
 			}
 			if reason == "" {
+				continue
+			}
+			if !known {
+				continue // rejecting deletes the torrent's data: only for torrents whose location we can check
+			}
+			if err := a.deletable(t.SavePath); err != nil {
+				log.Printf("Downloads (%s): refusing to reject %s: %v", name, q.Title, err)
 				continue
 			}
 			if removed >= a.Config.SweepMaxRemove {

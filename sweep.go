@@ -65,6 +65,10 @@ func (a *App) Sweep() {
 	}
 	a.debugf("Sweep: %d torrents, %d checked, %d with deleted files", len(torrents), eligible, len(gone))
 	for _, t := range gone {
+		if err := a.deletable(t.SavePath); err != nil {
+			log.Printf("Sweep: refusing to remove %s: %v", t.Name, err)
+			continue
+		}
 		if a.Config.DryRun {
 			log.Printf("[dry run] Sweep: would remove torrent %s (files deleted)", t.Name)
 			continue

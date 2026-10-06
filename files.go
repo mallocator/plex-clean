@@ -147,6 +147,10 @@ func (a *App) applyToFiles(it PendingItem, action string, archiveDst func(string
 		return nil
 	}
 	for _, f := range files {
+		if err := a.deletable(f); err != nil {
+			log.Printf("%s: refusing to %s: %v", it, action, err)
+			continue
+		}
 		if action == "archive" {
 			dst := archiveDst(f)
 			if a.Config.DryRun {

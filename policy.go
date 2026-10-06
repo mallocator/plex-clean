@@ -122,6 +122,10 @@ func (a *App) apply(it PendingItem) (bool, error) {
 		return true, nil
 	}
 
+	if err := a.deletable(file.Path); err != nil {
+		log.Printf("%s: refusing to delete: %v", it, err)
+		return true, nil
+	}
 	if err := a.Sonarr.DeleteEpisodeFile(file.ID); err != nil {
 		return false, err
 	}
