@@ -14,15 +14,16 @@ import (
 
 // App wires the webhook server, the pending queue and the external services.
 type App struct {
-	Config Config
-	Queue  *Queue
-	Sonarr *Sonarr
-	Qbt    *Qbittorrent
-	Radarr *Arr
-	Simkl  *Simkl
-	Seerr  *Seerr
-	Plex   *Plex
-	Now    func() time.Time // for tests
+	Config   Config
+	Queue    *Queue
+	Sonarr   *Sonarr
+	Qbt      *Qbittorrent
+	Radarr   *Arr
+	Simkl    *Simkl
+	Seerr    *Seerr
+	Plex     *Plex
+	Jellyfin *Jellyfin
+	Now      func() time.Time // for tests
 }
 
 func (a *App) now() time.Time {

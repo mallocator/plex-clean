@@ -32,17 +32,20 @@ type Config struct {
 	DryRun        bool
 	Debug         bool
 
-	SonarrURL       string
-	SonarrAPIKey    string
-	DeleteTag       string
-	ArchiveTag      string
-	ArchiveDir      string
-	AnimeArchiveDir string // archive for Sonarr series of type anime; empty uses ArchiveDir
-	MovieArchiveDir string // Radarr movies tagged MovieArchiveTag are moved here (movies.go); empty disables
-	MovieArchiveTag string
-	ArchiveShows    []string // shows not in Sonarr, handled by file name (see files.go)
-	DeleteShows     []string
-	SearchDirs      []string
+	SonarrURL            string
+	SonarrAPIKey         string
+	DeleteTag            string
+	ArchiveTag           string
+	ArchiveDir           string
+	AnimeArchiveDir      string // archive for Sonarr series of type anime; empty uses ArchiveDir
+	MovieArchiveDir      string // Radarr movies tagged MovieArchiveTag are moved here (movies.go); empty disables
+	MovieArchiveTag      string
+	JellyfinURL          string
+	JellyfinAPIKey       string
+	JellyfinArchiveUsers []string // their Jellyfin favourites (movies) are archived like the Radarr tag
+	ArchiveShows         []string // shows not in Sonarr, handled by file name (see files.go)
+	DeleteShows          []string
+	SearchDirs           []string
 
 	RadarrURL    string
 	RadarrAPIKey string
@@ -94,6 +97,9 @@ func main() {
 		app.Simkl = NewSimkl(config.SimklClientID, config.SimklTokenFile)
 		app.Seerr = NewSeerr(config.SeerrURL, config.SeerrAPIKey, config.SeerrUserID)
 	}
+	if config.JellyfinURL != "" && config.JellyfinAPIKey != "" {
+		app.Jellyfin = NewJellyfin(config.JellyfinURL, config.JellyfinAPIKey)
+	}
 	if config.PlexURL != "" {
 		app.Plex = NewPlex(config.PlexURL, config.PlexCollection)
 	}
@@ -141,17 +147,20 @@ func loadConfig() Config {
 		DryRun:        getEnv("DRY_RUN", "false") == "true",
 		Debug:         getEnv("DEBUG", "false") == "true",
 
-		SonarrURL:       strings.TrimRight(getEnv("SONARR_URL", ""), "/"),
-		SonarrAPIKey:    getEnv("SONARR_API_KEY", ""),
-		DeleteTag:       getEnv("DELETE_TAG", "delete-after-watch"),
-		ArchiveTag:      getEnv("ARCHIVE_TAG", "archive"),
-		ArchiveDir:      getEnv("ARCHIVE_DIR", "/archive"),
-		AnimeArchiveDir: getEnv("ANIME_ARCHIVE_DIR", ""),
-		MovieArchiveDir: getEnv("MOVIE_ARCHIVE_DIR", ""),
-		MovieArchiveTag: getEnv("MOVIE_ARCHIVE_TAG", "archive"),
-		ArchiveShows:    splitList(getEnv("ARCHIVE_SHOWS", "")),
-		DeleteShows:     splitList(getEnv("DELETE_SHOWS", "")),
-		SearchDirs:      splitList(getEnv("SEARCH_DIRS", "/downloads/ravi,/downloads/daniela")),
+		SonarrURL:            strings.TrimRight(getEnv("SONARR_URL", ""), "/"),
+		SonarrAPIKey:         getEnv("SONARR_API_KEY", ""),
+		DeleteTag:            getEnv("DELETE_TAG", "delete-after-watch"),
+		ArchiveTag:           getEnv("ARCHIVE_TAG", "archive"),
+		ArchiveDir:           getEnv("ARCHIVE_DIR", "/archive"),
+		AnimeArchiveDir:      getEnv("ANIME_ARCHIVE_DIR", ""),
+		MovieArchiveDir:      getEnv("MOVIE_ARCHIVE_DIR", ""),
+		MovieArchiveTag:      getEnv("MOVIE_ARCHIVE_TAG", "archive"),
+		JellyfinURL:          strings.TrimRight(getEnv("JELLYFIN_URL", ""), "/"),
+		JellyfinAPIKey:       getEnv("JELLYFIN_API_KEY", ""),
+		JellyfinArchiveUsers: splitList(getEnv("JELLYFIN_ARCHIVE_USERS", "")),
+		ArchiveShows:         splitList(getEnv("ARCHIVE_SHOWS", "")),
+		DeleteShows:          splitList(getEnv("DELETE_SHOWS", "")),
+		SearchDirs:           splitList(getEnv("SEARCH_DIRS", "/downloads/ravi,/downloads/daniela")),
 
 		RadarrURL:    strings.TrimRight(getEnv("RADARR_URL", ""), "/"),
 		RadarrAPIKey: getEnv("RADARR_API_KEY", ""),

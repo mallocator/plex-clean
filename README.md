@@ -46,7 +46,8 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    are gone are removed from qBittorrent. It checks each torrent's own save path, skips categories managed by
    Sonarr/Radarr, and refuses to run if the downloads share looks unmounted or if more than `SWEEP_MAX_REMOVE`
    torrents, and over half of them, look deleted at once.
-8. **Movies into the archive**: a Radarr movie tagged `MOVIE_ARCHIVE_TAG` (default `archive`) is copied with its
+8. **Movies into the archive**: a Radarr movie tagged `MOVIE_ARCHIVE_TAG` (default `archive`), or marked as favourite
+   (♥) in Jellyfin by one of `JELLYFIN_ARCHIVE_USERS`, is copied with its
    subtitles into `MOVIE_ARCHIVE_DIR` (e.g. the root of the movie archive, where the owner sorts it), then deleted in
    Radarr with its download files and an import exclusion. A file of the same name but different size already in the
    archive stops it (nothing is overwritten). Checked every `CHECK_INTERVAL`.
@@ -74,6 +75,7 @@ refused and logged.
 | `ARCHIVE_DIR` | `/archive` | Archive root |
 | `ANIME_ARCHIVE_DIR` | | Archive root for Sonarr series of type anime (default: `ARCHIVE_DIR`) |
 | `MOVIE_ARCHIVE_DIR`, `MOVIE_ARCHIVE_TAG` | , `archive` | Where Radarr movies tagged for the archive go; empty disables |
+| `JELLYFIN_URL`, `JELLYFIN_API_KEY`, `JELLYFIN_ARCHIVE_USERS` | | Jellyfin favourites of these users archive a movie like the tag |
 | `RADARR_URL`, `RADARR_API_KEY` | | Radarr for per-user movie folders |
 | `USER_FOLDERS` | | `2-daniela=/base,1-mallox=/base2` (Seerr tag labels; a plain name also routes but can't be created as a tag) |
 | `TV_SUBDIR`, `MOVIE_SUBDIR` | `tv`, `movies` | Subfolders below each user's base |

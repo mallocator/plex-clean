@@ -9,7 +9,8 @@ import (
 	"strings"
 )
 
-// Movies tagged MOVIE_ARCHIVE_TAG (default "archive") in Radarr go into the archive: the movie file and its subtitles
+// Movies tagged MOVIE_ARCHIVE_TAG (default "archive") in Radarr, or marked as favourite in Jellyfin by one of
+// JELLYFIN_ARCHIVE_USERS, go into the archive: the movie file and its subtitles
 // are copied into MOVIE_ARCHIVE_DIR (the root of Video/Movies, where the owner sorts them into genres), then the movie
 // is deleted in Radarr with its download files and an import exclusion, so no list adds it again.
 
@@ -17,6 +18,7 @@ var subtitleExts = []string{".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt"}
 
 type radarrMovie struct {
 	ID        int    `json:"id"`
+	TmdbID    int    `json:"tmdbId"`
 	Title     string `json:"title"`
 	Year      int    `json:"year"`
 	Tags      []int  `json:"tags"`
@@ -61,7 +63,14 @@ func (a *App) ArchiveMovies() {
 			tagID = id
 		}
 	}
-	if tagID < 0 {
+	favorites := map[int]bool{}
+	if a.Jellyfin != nil && len(a.Config.JellyfinArchiveUsers) > 0 {
+		if favorites, err = a.Jellyfin.FavoriteMovies(a.Config.JellyfinArchiveUsers); err != nil {
+			log.Printf("Archive: jellyfin favourites: %v", err)
+			favorites = map[int]bool{}
+		}
+	}
+	if tagID < 0 && len(favorites) == 0 {
 		return
 	}
 	var movies []radarrMovie
@@ -70,7 +79,12 @@ func (a *App) ArchiveMovies() {
 		return
 	}
 	for _, m := range movies {
-		if !slices.Contains(m.Tags, tagID) {
+		why := "tagged " + a.Config.MovieArchiveTag
+		switch {
+		case slices.Contains(m.Tags, tagID):
+		case favorites[m.TmdbID]:
+			why = "favourite in Jellyfin"
+		default:
 			continue
 		}
 		name := fmt.Sprintf("%s (%d)", m.Title, m.Year)
@@ -88,7 +102,7 @@ func (a *App) ArchiveMovies() {
 			continue
 		}
 		if a.Config.DryRun {
-			log.Printf("[dry run] Archive: would copy %d file(s) of %s to %s and remove it from Radarr", len(files), name, a.Config.MovieArchiveDir)
+			log.Printf("[dry run] Archive: would copy %d file(s) of %s (%s) to %s and remove it from Radarr", len(files), name, why, a.Config.MovieArchiveDir)
 			continue
 		}
 		if err := a.copyToArchive(files); err != nil {
@@ -99,7 +113,7 @@ func (a *App) ArchiveMovies() {
 			log.Printf("Archive: %s copied, but removing it from Radarr failed: %v", name, err)
 			continue
 		}
-		log.Printf("Archive: moved %s to %s (%d file(s)); removed from Radarr with an exclusion", name, a.Config.MovieArchiveDir, len(files))
+		log.Printf("Archive: moved %s (%s) to %s (%d file(s)); removed from Radarr with an exclusion", name, why, a.Config.MovieArchiveDir, len(files))
 	}
 }
 

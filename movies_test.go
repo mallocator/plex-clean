@@ -101,3 +101,66 @@ func TestArchiveNameClashCopiesNothing(t *testing.T) {
 		t.Error("archive file changed")
 	}
 }
+
+func TestArchiveMoviesFromJellyfinFavorites(t *testing.T) {
+	dl := t.TempDir()
+	mk := func(p string) string {
+		full := filepath.Join(dl, p)
+		os.MkdirAll(filepath.Dir(full), 0755)
+		os.WriteFile(full, []byte("x"), 0644)
+		return full
+	}
+	heat := mk("ravi/movies/Heat (1995)/Heat (1995).mkv")
+	other := mk("daniela/movies/Lee (2024)/Lee (2024).mkv")
+	var mu sync.Mutex
+	var deleted []string
+	radarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.URL.Path == "/api/v3/tag":
+			json.NewEncoder(w).Encode([]SonarrTag{{ID: 3, Label: "1-mallox"}}) // no archive tag at all
+		case r.URL.Path == "/api/v3/movie" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"id": 1, "tmdbId": 949, "title": "Heat", "year": 1995, "tags": []int{3}, "hasFile": true, "movieFile": map[string]any{"path": heat}},
+				{"id": 2, "tmdbId": 1, "title": "Lee", "year": 2024, "tags": []int{}, "hasFile": true, "movieFile": map[string]any{"path": other}},
+			})
+		case strings.HasPrefix(r.URL.Path, "/api/v3/movie/") && r.Method == http.MethodDelete:
+			deleted = append(deleted, strings.TrimPrefix(r.URL.Path, "/api/v3/movie/"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer radarr.Close()
+	jf := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Authorization"), `Token="jk"`) {
+			t.Errorf("auth %q", r.Header.Get("Authorization"))
+		}
+		switch {
+		case r.URL.Path == "/Users":
+			json.NewEncoder(w).Encode([]map[string]any{{"Id": "u1", "Name": "mallox"}, {"Id": "u2", "Name": "Daniela"}})
+		case r.URL.Path == "/Users/u1/Items" && r.URL.Query().Get("Filters") == "IsFavorite":
+			json.NewEncoder(w).Encode(map[string]any{"Items": []map[string]any{{"ProviderIds": map[string]string{"Tmdb": "949"}}}})
+		case r.URL.Path == "/Users/u2/Items":
+			json.NewEncoder(w).Encode(map[string]any{"Items": []map[string]any{{"ProviderIds": map[string]string{"Tmdb": "1"}}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer jf.Close()
+
+	a := newTestApp(t)
+	a.Radarr = NewArr(radarr.URL, "k")
+	a.Jellyfin = NewJellyfin(jf.URL, "jk")
+	a.Config.JellyfinArchiveUsers = []string{"mallox"}
+	a.Config.MovieArchiveDir = t.TempDir()
+	a.Config.MovieArchiveTag = "archive"
+	a.Config.DeleteRoots = []string{dl}
+	a.ArchiveMovies()
+	if strings.Join(deleted, ",") != "1" {
+		t.Errorf("archived %v, want only mallox's favourite (Daniela's favourites don't count)", deleted)
+	}
+	if _, err := os.Stat(filepath.Join(a.Config.MovieArchiveDir, "Heat (1995).mkv")); err != nil {
+		t.Error(err)
+	}
+}
