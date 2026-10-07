@@ -12,7 +12,7 @@ import (
 // path must be below one of DELETE_ROOTS (the downloads share) and outside the archive directories and PROTECTED_DIRS.
 func (a *App) deletable(path string) error {
 	p := filepath.Clean(path)
-	for _, d := range append([]string{a.Config.ArchiveDir, a.Config.AnimeArchiveDir}, a.Config.ProtectedDirs...) {
+	for _, d := range append([]string{a.Config.ArchiveDir, a.Config.AnimeArchiveDir, a.Config.MovieArchiveDir}, a.Config.ProtectedDirs...) {
 		if d != "" && within(p, d) {
 			return fmt.Errorf("%s is in the archive (%s), which only the owner changes", p, d)
 		}

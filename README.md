@@ -46,13 +46,17 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    are gone are removed from qBittorrent. It checks each torrent's own save path, skips categories managed by
    Sonarr/Radarr, and refuses to run if the downloads share looks unmounted or if more than `SWEEP_MAX_REMOVE`
    torrents, and over half of them, look deleted at once.
+8. **Movies into the archive**: a Radarr movie tagged `MOVIE_ARCHIVE_TAG` (default `archive`) is copied with its
+   subtitles into `MOVIE_ARCHIVE_DIR` (e.g. the root of the movie archive, where the owner sorts it), then deleted in
+   Radarr with its download files and an import exclusion. A file of the same name but different size already in the
+   archive stops it (nothing is overwritten). Checked every `CHECK_INTERVAL`.
 7. **Download health** (with the sweep): Sonarr/Radarr downloads that will never import are removed from qBittorrent
    through the app's queue, blocklisted, and searched again: fakes (an executable or archive instead of a video,
    nothing importable) and torrents without any data for `STALL_TIMEOUT`. At most `SWEEP_MAX_REMOVE` per run.
 
 **The archive is never touched.** Every deletion (Sonarr episode files, files found by name, the torrent sweep,
 download health) first checks the path: it must be below `DELETE_ROOTS` (default `/downloads`) and outside
-`ARCHIVE_DIR`, `ANIME_ARCHIVE_DIR` and `PROTECTED_DIRS`. Archiving only copies into the archive. Anything else is
+`ARCHIVE_DIR`, `ANIME_ARCHIVE_DIR`, `MOVIE_ARCHIVE_DIR` and `PROTECTED_DIRS`. Archiving only copies into the archive. Anything else is
 refused and logged.
 
 ## Configuration
@@ -69,6 +73,7 @@ refused and logged.
 | `DELETE_TAG`, `ARCHIVE_TAG` | `delete-after-watch`, `archive` | Sonarr tag labels |
 | `ARCHIVE_DIR` | `/archive` | Archive root |
 | `ANIME_ARCHIVE_DIR` | | Archive root for Sonarr series of type anime (default: `ARCHIVE_DIR`) |
+| `MOVIE_ARCHIVE_DIR`, `MOVIE_ARCHIVE_TAG` | , `archive` | Where Radarr movies tagged for the archive go; empty disables |
 | `RADARR_URL`, `RADARR_API_KEY` | | Radarr for per-user movie folders |
 | `USER_FOLDERS` | | `2-daniela=/base,1-mallox=/base2` (Seerr tag labels; a plain name also routes but can't be created as a tag) |
 | `TV_SUBDIR`, `MOVIE_SUBDIR` | `tv`, `movies` | Subfolders below each user's base |

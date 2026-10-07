@@ -37,7 +37,9 @@ type Config struct {
 	DeleteTag       string
 	ArchiveTag      string
 	ArchiveDir      string
-	AnimeArchiveDir string   // archive for Sonarr series of type anime; empty uses ArchiveDir
+	AnimeArchiveDir string // archive for Sonarr series of type anime; empty uses ArchiveDir
+	MovieArchiveDir string // Radarr movies tagged MovieArchiveTag are moved here (movies.go); empty disables
+	MovieArchiveTag string
 	ArchiveShows    []string // shows not in Sonarr, handled by file name (see files.go)
 	DeleteShows     []string
 	SearchDirs      []string
@@ -96,7 +98,7 @@ func main() {
 		app.Plex = NewPlex(config.PlexURL, config.PlexCollection)
 	}
 
-	go loop(config.CheckInterval, func() { app.Route(); app.ProcessDue() })
+	go loop(config.CheckInterval, func() { app.Route(); app.ProcessDue(); app.ArchiveMovies() })
 	if app.Qbt != nil && config.SweepInterval > 0 {
 		go loop(config.SweepInterval, func() { app.Sweep(); app.CheckDownloads() })
 	}
@@ -145,6 +147,8 @@ func loadConfig() Config {
 		ArchiveTag:      getEnv("ARCHIVE_TAG", "archive"),
 		ArchiveDir:      getEnv("ARCHIVE_DIR", "/archive"),
 		AnimeArchiveDir: getEnv("ANIME_ARCHIVE_DIR", ""),
+		MovieArchiveDir: getEnv("MOVIE_ARCHIVE_DIR", ""),
+		MovieArchiveTag: getEnv("MOVIE_ARCHIVE_TAG", "archive"),
 		ArchiveShows:    splitList(getEnv("ARCHIVE_SHOWS", "")),
 		DeleteShows:     splitList(getEnv("DELETE_SHOWS", "")),
 		SearchDirs:      splitList(getEnv("SEARCH_DIRS", "/downloads/ravi,/downloads/daniela")),
