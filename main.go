@@ -132,7 +132,7 @@ func loop(interval time.Duration, fn func()) {
 func loadConfig() Config {
 	return Config{
 		Port:          getInt("PORT", 3333),
-		OutputDir:     getEnv("OUTPUT_DIR", "/output"),
+		OutputDir:     getEnv("OUTPUT_DIR", ""), // marker files are optional (the old Tautulli-era "watched" folder)
 		StateFile:     getEnv("STATE_FILE", "/data/pending.json"),
 		GracePeriod:   getDuration("GRACE_PERIOD", 24*time.Hour),
 		CheckInterval: getDuration("CHECK_INTERVAL", 5*time.Minute),

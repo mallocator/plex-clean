@@ -4,7 +4,7 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 
 1. **Watched events** come from Plex webhooks (`media.scrobble`, needs Plex Pass) and the Jellyfin
    [Webhook plugin](https://github.com/jellyfin/jellyfin-plugin-webhook) (Playback Stop, played to completion).
-   No Tautulli needed. Every watched item gets a marker file in `OUTPUT_DIR` (same format as before).
+   No Tautulli needed. Every watched item is logged, and optionally gets a marker file in `OUTPUT_DIR`.
    A "movie" whose title is a release name (`Show S17E01 ...`) counts as that episode: loose episode files in a
    download folder show up as movies in Jellyfin's mixed libraries.
 2. **Episodes wait a grace period** (default 24 h) in a persistent queue, so you can rewatch or catch up.
@@ -60,7 +60,7 @@ refused and logged.
 | Variable | Default | |
 |---|---|---|
 | `PORT` | `3333` | Webhook server |
-| `OUTPUT_DIR` | `/output` | Marker files |
+| `OUTPUT_DIR` | | Marker files (one JSON per watched item); off by default, watched items are logged either way |
 | `STATE_FILE` | `/data/pending.json` | Grace-period queue |
 | `GRACE_PERIOD` | `24h` | Time between watching and acting |
 | `CHECK_INTERVAL` | `5m` | How often due episodes are processed |

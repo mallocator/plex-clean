@@ -204,6 +204,11 @@ func (a *App) Watched(e WatchEvent) {
 
 func (a *App) writeMarker(e WatchEvent) {
 	if a.Config.OutputDir == "" {
+		if e.Type == "episode" {
+			log.Printf("Watched in %s: %s S%02dE%02d", e.Source, e.Series, e.Season, e.Episode)
+		} else {
+			log.Printf("Watched in %s: %s", e.Source, e.Title)
+		}
 		return
 	}
 	var name string
