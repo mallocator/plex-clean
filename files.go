@@ -168,15 +168,23 @@ func (a *App) applyToFiles(it PendingItem, action string, archiveDst func(string
 				return err
 			}
 			log.Printf("%s: moved %s to %s", it, f, dst)
+			metrics.Inc("plexclean_actions_total", "action", "file_archived")
+			metrics.Add("plexclean_freed_bytes_total", float64(st.Size()))
 		} else {
 			if a.Config.DryRun {
 				log.Printf("[dry run] %s: would delete %s", it, f)
 				continue
 			}
+			var size int64
+			if st, err := os.Stat(f); err == nil {
+				size = st.Size()
+			}
 			if err := os.Remove(f); err != nil {
 				return err
 			}
 			log.Printf("%s: deleted %s", it, f)
+			metrics.Inc("plexclean_actions_total", "action", "file_deleted")
+			metrics.Add("plexclean_freed_bytes_total", float64(size))
 		}
 	}
 	return nil

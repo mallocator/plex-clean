@@ -92,6 +92,7 @@ refused and logged.
 | `SWEEP_SKIP_CATEGORIES` | `sonarr,radarr` | Categories whose torrents their apps remove |
 | `SWEEP_MAX_REMOVE` | `5` | Safety limit, see above; also the download health limit per run |
 | `STALL_TIMEOUT` | `12h` | Sonarr/Radarr torrents without data this long are rejected; `0` disables |
+| `STATS_INTERVAL` | `2m` | Refresh of the `/metrics` gauges; `0` disables |
 | `DELETE_ROOTS` | `/downloads` | Deletions only below these |
 | `PROTECTED_DIRS` | | Never deleted in, besides the archive dirs |
 | `DEBUG` | `false` | Verbose logging |
@@ -106,6 +107,14 @@ everywhere), because Sonarr and qBittorrent report their own paths.
 - `POST /`: either, detected by content type.
 - `POST /sonarr`, `POST /radarr`: Sonarr/Radarr Connect webhooks; trigger per-user routing.
 - `GET /pending`: the queue. `GET /healthz`: liveness.
+- `GET /metrics`: Prometheus metrics. Counters since start: `plexclean_watched_total{source}`,
+  `plexclean_actions_total{action}` (episode_deleted, episode_archived, file_deleted, file_archived, movie_archived,
+  torrent_swept, download_rejected with `reason` stalled/unusable, routed, tagged), `plexclean_freed_bytes_total`.
+  Gauges refreshed every `STATS_INTERVAL` from the services plex-clean already uses: `plexclean_pending_items`,
+  `plexclean_qbittorrent_torrents{state}`, `plexclean_qbittorrent_speed_bytes{direction}`,
+  `plexclean_arr_queue_items{app,state}`, `plexclean_arr_missing{app}`, `plexclean_arr_library_bytes{app}`,
+  `plexclean_arr_library_files{app}`, `plexclean_streams{server,kind}` (Plex/Jellyfin sessions: direct, transcode_hw,
+  transcode_sw) and `plexclean_stats_last_success_timestamp_seconds{source}`.
 
 ## Development
 

@@ -112,6 +112,7 @@ func (a *App) routeArr(c *Arr, kind, subdir string) error {
 			continue
 		}
 		log.Printf("Route: moved %s %q to %s (requested by %s)", kind, title, dst, user)
+		metrics.Inc("plexclean_actions_total", "action", "routed")
 	}
 	return nil
 }
@@ -155,6 +156,7 @@ func (a *App) tagByFolder(c *Arr, kind, subdir string, it map[string]any, tags m
 		return
 	}
 	log.Printf("Route: tagged %s %q with %s (in %s's folder)", kind, title, label, user)
+	metrics.Inc("plexclean_actions_total", "action", "tagged")
 }
 
 // toInts converts JSON numbers (float64) to ints.

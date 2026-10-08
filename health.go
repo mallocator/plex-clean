@@ -134,6 +134,11 @@ func (a *App) CheckDownloads() {
 			}
 			removed++
 			log.Printf("Downloads (%s): rejected %s (%s); blocklisted, searching again", name, q.Title, reason)
+			kind := "unusable"
+			if strings.HasPrefix(reason, "stalled") {
+				kind = "stalled"
+			}
+			metrics.Inc("plexclean_actions_total", "action", "download_rejected", "reason", kind)
 		}
 	}
 }

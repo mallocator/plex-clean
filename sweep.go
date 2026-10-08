@@ -78,5 +78,6 @@ func (a *App) Sweep() {
 			continue
 		}
 		log.Printf("Sweep: removed torrent %s (files deleted)", t.Name)
+		metrics.Inc("plexclean_actions_total", "action", "torrent_swept")
 	}
 }

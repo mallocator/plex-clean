@@ -91,6 +91,7 @@ func (a *App) Routes() http.Handler {
 	}
 	mux.HandleFunc("/sonarr", arrHook)
 	mux.HandleFunc("/radarr", arrHook)
+	mux.HandleFunc("/metrics", a.handleMetrics)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	mux.HandleFunc("/pending", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -195,6 +196,7 @@ func (a *App) handleJellyfin(w http.ResponseWriter, r *http.Request) {
 
 // Watched records a finished viewing: marker file, and episodes go into the grace-period queue.
 func (a *App) Watched(e WatchEvent) {
+	metrics.Inc("plexclean_watched_total", "source", e.Source)
 	a.writeMarker(e)
 	if e.Type == "episode" {
 		if a.Queue.Add(e, a.now()) {

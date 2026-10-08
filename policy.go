@@ -117,6 +117,7 @@ func (a *App) apply(it PendingItem) (bool, error) {
 			return false, fmt.Errorf("archiving to %s: %w", dst, err)
 		}
 		log.Printf("%s: archived to %s", it, dst)
+		metrics.Inc("plexclean_actions_total", "action", "episode_archived")
 	} else if a.Config.DryRun {
 		log.Printf("[dry run] %s: would delete %s in Sonarr", it, file.Path)
 		return true, nil
@@ -133,6 +134,10 @@ func (a *App) apply(it PendingItem) (bool, error) {
 		log.Printf("%s: deleted, but unmonitoring failed: %v", it, err)
 	}
 	log.Printf("%s: deleted %s and unmonitored the episode", it, file.Path)
+	if action != "archive" {
+		metrics.Inc("plexclean_actions_total", "action", "episode_deleted")
+	}
+	metrics.Add("plexclean_freed_bytes_total", float64(file.Size))
 	return true, nil
 }
 

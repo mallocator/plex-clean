@@ -114,6 +114,7 @@ func (a *App) ArchiveMovies() {
 			continue
 		}
 		log.Printf("Archive: moved %s (%s) to %s (%d file(s)); removed from Radarr with an exclusion", name, why, a.Config.MovieArchiveDir, len(files))
+		metrics.Inc("plexclean_actions_total", "action", "movie_archived")
 	}
 }
 

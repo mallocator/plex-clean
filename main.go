@@ -11,6 +11,7 @@
 // the owner's Simkl lists (simkl.go). Shows Sonarr doesn't manage can be listed in
 // ARCHIVE_SHOWS / DELETE_SHOWS instead; their files are found in SEARCH_DIRS by release name. Separately, a
 // periodic sweep removes completed qBittorrent torrents whose files are gone (formerly qbittorrent-cleaner).
+// /metrics serves Prometheus metrics (metrics.go).
 package main
 
 import (
@@ -71,6 +72,7 @@ type Config struct {
 	SweepSkipCats  []string      // categories managed elsewhere (Sonarr/Radarr remove their own torrents)
 	SweepMaxRemove int           // refuse a sweep removing more than this many torrents and over half of them (missing mount)
 	StallTimeout   time.Duration // Sonarr/Radarr torrents without data for this long are rejected; 0 disables
+	StatsInterval  time.Duration // refresh of the /metrics gauges (metrics.go); 0 disables
 
 	DeleteRoots   []string // deletions only below these (the downloads share); see guard.go
 	ProtectedDirs []string // never deleted in, in addition to the archive directories
@@ -107,6 +109,9 @@ func main() {
 	go loop(config.CheckInterval, func() { app.Route(); app.ProcessDue(); app.ArchiveMovies() })
 	if app.Qbt != nil && config.SweepInterval > 0 {
 		go loop(config.SweepInterval, func() { app.Sweep(); app.CheckDownloads() })
+	}
+	if config.StatsInterval > 0 {
+		go app.statsLoop(config.StatsInterval)
 	}
 	if app.Simkl != nil && config.SimklInterval > 0 {
 		go loopRetry(config.SimklInterval, 10*time.Minute, app.SimklSync)
@@ -186,6 +191,7 @@ func loadConfig() Config {
 		SweepSkipCats:  splitList(getEnv("SWEEP_SKIP_CATEGORIES", "sonarr,radarr")),
 		SweepMaxRemove: getInt("SWEEP_MAX_REMOVE", 5),
 		StallTimeout:   getDuration("STALL_TIMEOUT", 12*time.Hour),
+		StatsInterval:  getDuration("STATS_INTERVAL", 2*time.Minute),
 
 		DeleteRoots:   splitList(getEnv("DELETE_ROOTS", "/downloads")),
 		ProtectedDirs: splitList(getEnv("PROTECTED_DIRS", "")),
