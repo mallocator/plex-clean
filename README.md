@@ -29,12 +29,11 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    Runs on Sonarr/Radarr "Connect" webhooks (`POST /sonarr`, `/radarr`, e.g. On Series/Movie Add) and every
    `CHECK_INTERVAL`. Items outside the user folders are never touched.
 5. **Simkl sync** (every `SIMKL_INTERVAL`): keeps Seerr and Radarr in line with the owner's Simkl lists.
-   - Seerr blocklist (hidden from discovery): movies completed or dropped; shows/anime watching, completed, dropped
-     or on hold. Titles Sonarr/Radarr manage are skipped; movies back on "plan to watch"/"watching" are unblocked.
+   - Seerr blocklist (hidden from discovery and cannot be requested): dropped movies; shows/anime watching, completed, dropped
+     or on hold. Completed movies remain requestable; legacy watched-movie blocks are removed without changing Simkl history. Titles Sonarr/Radarr manage are skipped; movies back on "plan to watch"/"watching" are unblocked.
    - The collection is Plex's movie sections below `PLEX_COLLECTION_ROOT` (Plex matches the curated library far
      better than Jellyfin) plus whatever Seerr reports as available.
-   - Cinema rule: a movie completed in Simkl before its home release (watch date earlier than the digital or
-     physical release) is unmonitored in Radarr if it hasn't been downloaded.
+   - A cinema watch does not unmonitor a wanted movie: watched history is independent of requests.
    - Collection rule: a wanted movie Seerr already reports as available (Jellyfin library) gets a Radarr exclusion
      (and is unmonitored if Radarr waits for it), so Radarr's Simkl import list doesn't fetch a second copy.
    - Each rule acts once per movie (`SIMKL_RULES_FILE` remembers them): a movie the owner monitors again in Radarr,
@@ -81,7 +80,7 @@ refused and logged.
 | `TV_SUBDIR`, `MOVIE_SUBDIR` | `tv`, `movies` | Subfolders below each user's base |
 | `SIMKL_CLIENT_ID`, `SIMKL_TOKEN_FILE` | , `/data/simkl.json` | Simkl app and token (`access_token`, `refresh_token`, `expires_in`, `obtained_at`) |
 | `SIMKL_INTERVAL` | `6h` | `0` disables the Simkl sync |
-| `SIMKL_RULES_FILE` | `/data/simkl-rules.json` | Movies the cinema/collection rules already handled |
+| `SIMKL_RULES_FILE` | `/data/simkl-rules.json` | Movies the collection rule already handled (includes legacy cinema decisions) |
 | `SEERR_URL`, `SEERR_API_KEY`, `SEERR_USER_ID` | , , `1` | Seerr for the blocklist (entries attributed to that user) |
 | `PLEX_URL`, `PLEX_COLLECTION_ROOT` | , `/volume1/Video` | Plex local API (no token from an allowed network) for the collection rule |
 | `ARCHIVE_SHOWS`, `DELETE_SHOWS` | | Comma-separated show names for shows not in Sonarr |

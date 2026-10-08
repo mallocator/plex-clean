@@ -70,7 +70,7 @@ type fakeServices struct {
 }
 
 func newFakeServices(t *testing.T) (*fakeServices, *httptest.Server) {
-	f := &fakeServices{blocklist: map[string]bool{"tv:202": true, "movie:104": true}, moviePuts: map[string]map[string]any{}}
+	f := &fakeServices{blocklist: map[string]bool{"tv:202": true, "movie:104": true, "movie:101": true, "movie:103": true}, moviePuts: map[string]map[string]any{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -165,14 +165,15 @@ func TestSimklSyncAppliesHouseRules(t *testing.T) {
 	if got := fmt.Sprint(fsvc.posted); got != "[movie:102 tv:201 tv:301]" { // 101, 103, 107 are in Radarr
 		t.Errorf("blocklisted %s (want completed/dropped movies and watching/hold shows; not tv:202 already there, not tv:203, movie:101 (in Radarr now) or movie:103 managed by Sonarr/Radarr)", got)
 	}
-	if fmt.Sprint(fsvc.deleted) != "[movie:104]" {
-		t.Errorf("unblocked %v, want the movie back on plan to watch", fsvc.deleted)
+	sort.Strings(fsvc.deleted)
+	if fmt.Sprint(fsvc.deleted) != "[movie:101 movie:103 movie:104]" {
+		t.Errorf("unblocked %v, want completed movies and the movie back on plan to watch requestable", fsvc.deleted)
 	}
 	if fmt.Sprint(fsvc.exclusions) != "[105]" {
 		t.Errorf("exclusions %v, want the wanted movie that's already in the collection", fsvc.exclusions)
 	}
-	if len(fsvc.moviePuts) != 2 || fsvc.moviePuts["/api/v3/movie/7"]["monitored"] != false || fsvc.moviePuts["/api/v3/movie/8"]["monitored"] != false {
-		t.Errorf("radarr puts %v, want Cinema (completed, unreleased) and Own It (in collection) unmonitored; Seen It (completed, released) and Not Yet untouched", fsvc.moviePuts)
+	if len(fsvc.moviePuts) != 1 || fsvc.moviePuts["/api/v3/movie/8"]["monitored"] != false {
+		t.Errorf("radarr puts %v, want only Own It (in collection) unmonitored; all completed movies stay monitored", fsvc.moviePuts)
 	}
 	if fsimkl.refreshs != 0 || fsimkl.gotToken != "Bearer access-1" {
 		t.Errorf("refreshs %d token %q", fsimkl.refreshs, fsimkl.gotToken)
@@ -218,27 +219,6 @@ func TestSimklMissingTokenFile(t *testing.T) {
 	}
 }
 
-func TestSeenInCinema(t *testing.T) {
-	watched := map[int]time.Time{1: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC), 2: {}}
-	cases := []struct {
-		tmdb  int
-		movie map[string]any
-		want  bool
-	}{
-		{1, map[string]any{"digitalRelease": "2026-09-29T00:00:00Z"}, true},                                             // before digital
-		{1, map[string]any{"digitalRelease": "2026-12-01T00:00:00Z", "physicalRelease": "2026-07-01T00:00:00Z"}, false}, // disc came first
-		{1, map[string]any{}, true}, // no home release yet
-		{2, map[string]any{"digitalRelease": "2026-09-29T00:00:00Z"}, false}, // no watch date, released
-		{2, map[string]any{}, true},  // no watch date, unreleased
-		{3, map[string]any{}, false}, // not completed
-	}
-	for i, c := range cases {
-		if got := seenInCinema(watched, c.tmdb, c.movie); got != c.want {
-			t.Errorf("case %d: got %v want %v", i, got, c.want)
-		}
-	}
-}
-
 func TestSimklCollectionRuleUsesPlex(t *testing.T) {
 	a, _, fsvc, _ := simklApp(t, time.Now())
 	plex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +240,7 @@ func TestSimklRulesActOncePerMovie(t *testing.T) {
 	a, _, fsvc, _ := simklApp(t, time.Now())
 	a.Config.SimklRulesFile = filepath.Join(t.TempDir(), "rules.json")
 	a.SimklSync()
-	if len(fsvc.moviePuts) != 2 || len(fsvc.exclusions) != 1 {
+	if len(fsvc.moviePuts) != 1 || len(fsvc.exclusions) != 1 {
 		t.Fatalf("first run: puts %v exclusions %v", fsvc.moviePuts, fsvc.exclusions)
 	}
 	// The owner monitors both movies again and deletes the exclusion (the fake keeps reporting them monitored and

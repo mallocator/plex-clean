@@ -14,23 +14,16 @@ import (
 	"time"
 )
 
-// Simkl sync: teaches Seerr what has been seen, from the owner's Simkl lists.
-//   - Seerr blocklist (hides titles from discovery): movies completed or dropped; shows/anime watching, completed,
-//     dropped or on hold. Titles Sonarr/Radarr manage are skipped. Movies back on "plan to watch" or "watching"
-//     (the owner wants a copy) are taken off the blocklist again.
-//   - Cinema rule: a movie completed in Simkl before its home release (watch date earlier than Radarr's digital or
-//     physical release date, or no home release yet) was seen in the cinema; if Radarr waits for it (monitored, no
-//     file), it is unmonitored so it doesn't download. Movies watched after their home release (e.g. on a watchlist to
-//     get a copy) are left alone.
-//   - Collection rule: a movie on "plan to watch"/"watching" that Seerr already reports as available (it is in the
-//     Jellyfin movie library) gets a Radarr exclusion, so Radarr's Simkl list doesn't download a second copy, and is
-//     unmonitored if Radarr already waits for it.
+// Simkl sync: dropped movies and inactive shows are hidden using Seerr's blocklist.
+// Completed movies remain requestable, including ones watched in the cinema.
+// A watched mark is history, not an instruction to reject future downloads.
+// The collection rule still avoids automatic duplicates of movies already owned.
 // Downloading from Simkl lists is done by Sonarr/Radarr's own Simkl import lists.
 // Auth: Simkl OAuth2 token file (device login once), renewed with its refresh token before it expires.
 
 var (
 	simklAPI   = "https://api.simkl.com"
-	hideMovies = map[string]bool{"completed": true, "dropped": true}
+	hideMovies = map[string]bool{"dropped": true}
 	hideShows  = map[string]bool{"watching": true, "completed": true, "dropped": true, "hold": true}
 	wantMovies = map[string]bool{"plantowatch": true, "watching": true}
 )
@@ -261,7 +254,7 @@ func (a *App) SimklSync() bool {
 	}
 	hide := map[mediaKey]string{}
 	want := map[mediaKey]bool{}
-	completedMovies := map[int]time.Time{} // tmdb -> when it was watched (zero if unknown)
+	requestable := map[mediaKey]bool{} // completed movies must not retain legacy blocks
 	for _, it := range all.Movies {
 		if it.Movie == nil {
 			continue
@@ -274,12 +267,11 @@ func (a *App) SimklSync() bool {
 		switch {
 		case hideMovies[it.Status]:
 			hide[k] = it.Movie.Title
-			if it.Status == "completed" {
-				watched, _ := time.Parse(time.RFC3339, it.LastWatchedAt)
-				completedMovies[int(id)] = watched
-			}
+		case it.Status == "completed":
+			requestable[k] = true
 		case wantMovies[it.Status]:
 			want[k] = true
+			requestable[k] = true
 		}
 	}
 	for _, it := range append(all.Shows, all.Anime...) {
@@ -317,12 +309,12 @@ func (a *App) SimklSync() bool {
 		}
 		added++
 	}
-	for k := range want {
+	for k := range requestable {
 		if !current[k] {
 			continue
 		}
 		if a.Config.DryRun {
-			log.Printf("[dry run] Simkl: would take movie %d off the blocklist (wanted again)", k.TMDB)
+			log.Printf("[dry run] Simkl: would take movie %d off the blocklist (watched or wanted again)", k.TMDB)
 			continue
 		}
 		if err := a.Seerr.Unblock(k); err != nil {
@@ -384,8 +376,6 @@ func (a *App) SimklSync() bool {
 		}
 		reason := ""
 		switch {
-		case seenInCinema(completedMovies, tmdb[0], m):
-			reason = "completed in Simkl before its home release, seen in the cinema"
 		case haveCopy[tmdb[0]]:
 			reason = "already in the collection"
 		default:
@@ -439,25 +429,4 @@ func (a *App) managedMedia() (map[mediaKey]bool, []map[string]any, error) {
 		}
 	}
 	return managed, movies, nil
-}
-
-// seenInCinema reports whether a Simkl-completed movie was watched before its home release (Radarr's earliest digital
-// or physical release date). Without a known watch date it counts only if there is no home release yet.
-func seenInCinema(completed map[int]time.Time, tmdb int, radarrMovie map[string]any) bool {
-	watched, ok := completed[tmdb]
-	if !ok {
-		return false
-	}
-	var home time.Time
-	for _, f := range []string{"digitalRelease", "physicalRelease"} {
-		if v, _ := radarrMovie[f].(string); v != "" {
-			if t, err := time.Parse(time.RFC3339, v); err == nil && (home.IsZero() || t.Before(home)) {
-				home = t
-			}
-		}
-	}
-	if home.IsZero() {
-		return true // no home release yet: it can only have been the cinema
-	}
-	return !watched.IsZero() && watched.Before(home)
 }
