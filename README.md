@@ -53,6 +53,10 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 7. **Download health** (with the sweep): Sonarr/Radarr downloads that will never import are removed from qBittorrent
    through the app's queue, blocklisted, and searched again: fakes (an executable or archive instead of a video,
    nothing importable) and torrents without any data for `STALL_TIMEOUT`. At most `SWEEP_MAX_REMOVE` per run.
+8. **Seerr orphans** (daily, `SEERR_RECONCILE_INTERVAL`): Seerr TV records stuck in "processing" whose series is no
+   longer in Sonarr (by TVDB and TMDB ID), with no request and nothing available, are reset (`DELETE /api/v1/media/<id>`;
+   files untouched). Seerr's own scan skips records created from TMDB alone, which otherwise stay processing forever and
+   block requests for new seasons. Skipped when Sonarr reports no series; at most 50 resets per run.
 
 **The archive is never touched.** Every deletion (Sonarr episode files, files found by name, the torrent sweep,
 download health) first checks the path: it must be below `DELETE_ROOTS` (default `/downloads`) and outside
@@ -92,6 +96,7 @@ refused and logged.
 | `SWEEP_MAX_REMOVE` | `5` | Safety limit, see above; also the download health limit per run |
 | `STALL_TIMEOUT` | `12h` | Sonarr/Radarr torrents without data this long are rejected; `0` disables |
 | `STATS_INTERVAL` | `2m` | Refresh of the `/metrics` gauges; `0` disables |
+| `SEERR_RECONCILE_INTERVAL` | `24h` | Reset orphaned "processing" TV records in Seerr; `0` disables (needs `SEERR_URL`/`SEERR_API_KEY` and Sonarr) |
 | `DELETE_ROOTS` | `/downloads` | Deletions only below these |
 | `PROTECTED_DIRS` | | Never deleted in, besides the archive dirs |
 | `DEBUG` | `false` | Verbose logging |
@@ -108,7 +113,7 @@ everywhere), because Sonarr and qBittorrent report their own paths.
 - `GET /pending`: the queue. `GET /healthz`: liveness.
 - `GET /metrics`: Prometheus metrics. Counters since start: `plexclean_watched_total{source}`,
   `plexclean_actions_total{action}` (episode_deleted, episode_archived, file_deleted, file_archived, movie_archived,
-  torrent_swept, download_rejected with `reason` stalled/unusable, routed, tagged), `plexclean_freed_bytes_total`.
+  torrent_swept, download_rejected with `reason` stalled/unusable, routed, tagged, seerr_reset), `plexclean_freed_bytes_total`.
   Gauges refreshed every `STATS_INTERVAL` from the services plex-clean already uses: `plexclean_pending_items`,
   `plexclean_qbittorrent_torrents{state}`, `plexclean_qbittorrent_speed_bytes{direction}`,
   `plexclean_arr_queue_items{app,state}`, `plexclean_arr_missing{app}`, `plexclean_arr_library_bytes{app}`,

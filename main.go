@@ -60,7 +60,8 @@ type Config struct {
 	SimklRulesFile string        // movies the cinema/collection rules handled (each rule acts once per movie)
 	SeerrURL       string
 	SeerrAPIKey    string
-	SeerrUserID    int // Seerr user the blocklist entries are attributed to
+	SeerrUserID    int           // Seerr user the blocklist entries are attributed to
+	SeerrReconcile time.Duration // reset orphaned "processing" TV records (seerr_reconcile.go); 0 disables
 	PlexURL        string
 	PlexCollection string // Plex movie sections below this path are the collection (collection rule)
 
@@ -95,9 +96,11 @@ func main() {
 	if config.RadarrURL != "" {
 		app.Radarr = NewArr(config.RadarrURL, config.RadarrAPIKey)
 	}
-	if config.SimklClientID != "" && config.SeerrURL != "" {
-		app.Simkl = NewSimkl(config.SimklClientID, config.SimklTokenFile)
+	if config.SeerrURL != "" && config.SeerrAPIKey != "" {
 		app.Seerr = NewSeerr(config.SeerrURL, config.SeerrAPIKey, config.SeerrUserID)
+	}
+	if config.SimklClientID != "" && app.Seerr != nil {
+		app.Simkl = NewSimkl(config.SimklClientID, config.SimklTokenFile)
 	}
 	if config.JellyfinURL != "" && config.JellyfinAPIKey != "" {
 		app.Jellyfin = NewJellyfin(config.JellyfinURL, config.JellyfinAPIKey)
@@ -112,6 +115,9 @@ func main() {
 	}
 	if config.StatsInterval > 0 {
 		go app.statsLoop(config.StatsInterval)
+	}
+	if app.Seerr != nil && app.Sonarr != nil && config.SeerrReconcile > 0 {
+		go loop(config.SeerrReconcile, app.SeerrReconcile)
 	}
 	if app.Simkl != nil && config.SimklInterval > 0 {
 		go loopRetry(config.SimklInterval, 10*time.Minute, app.SimklSync)
@@ -180,6 +186,7 @@ func loadConfig() Config {
 		SeerrURL:       strings.TrimRight(getEnv("SEERR_URL", ""), "/"),
 		SeerrAPIKey:    getEnv("SEERR_API_KEY", ""),
 		SeerrUserID:    getInt("SEERR_USER_ID", 1),
+		SeerrReconcile: getDuration("SEERR_RECONCILE_INTERVAL", 24*time.Hour),
 		PlexURL:        strings.TrimRight(getEnv("PLEX_URL", ""), "/"),
 		PlexCollection: getEnv("PLEX_COLLECTION_ROOT", "/volume1/Video"),
 
