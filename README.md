@@ -29,8 +29,9 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    Runs on Sonarr/Radarr "Connect" webhooks (`POST /sonarr`, `/radarr`, e.g. On Series/Movie Add) and every
    `CHECK_INTERVAL`. Items outside the user folders are never touched.
 5. **Simkl sync** (every `SIMKL_INTERVAL`): keeps Seerr and Radarr in line with the owner's Simkl lists.
-   - Seerr blocklist (hidden from discovery and cannot be requested): dropped movies; shows/anime watching, completed, dropped
-     or on hold. Completed movies remain requestable; legacy watched-movie blocks are removed without changing Simkl history. Titles Sonarr/Radarr manage are skipped; movies back on "plan to watch"/"watching" are unblocked.
+   - Seerr blocklist (hidden from discovery and cannot be requested): dropped movies and dropped shows/anime. Shows being
+     watched, on hold or completed stay requestable (their next seasons too), and completed movies remain requestable;
+     blocks from earlier policies are removed without changing Simkl history. Titles Sonarr/Radarr manage are skipped.
    - The collection is Plex's movie sections below `PLEX_COLLECTION_ROOT` (Plex matches the curated library far
      better than Jellyfin) plus whatever Seerr reports as available.
    - A cinema watch does not unmonitor a wanted movie: watched history is independent of requests.

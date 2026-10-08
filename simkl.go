@@ -14,7 +14,9 @@ import (
 	"time"
 )
 
-// Simkl sync: dropped movies and inactive shows are hidden using Seerr's blocklist.
+// Simkl sync: dropped movies and dropped shows are hidden using Seerr's blocklist (it also refuses requests).
+// Shows being watched, on hold or completed stay requestable, so their next seasons can be requested; blocks
+// from the earlier policy are removed.
 // Completed movies remain requestable, including ones watched in the cinema.
 // A watched mark is history, not an instruction to reject future downloads.
 // The collection rule still avoids automatic duplicates of movies already owned.
@@ -24,7 +26,7 @@ import (
 var (
 	simklAPI   = "https://api.simkl.com"
 	hideMovies = map[string]bool{"dropped": true}
-	hideShows  = map[string]bool{"watching": true, "completed": true, "dropped": true, "hold": true}
+	hideShows  = map[string]bool{"dropped": true}
 	wantMovies = map[string]bool{"plantowatch": true, "watching": true}
 )
 
@@ -254,7 +256,7 @@ func (a *App) SimklSync() bool {
 	}
 	hide := map[mediaKey]string{}
 	want := map[mediaKey]bool{}
-	requestable := map[mediaKey]bool{} // completed movies must not retain legacy blocks
+	requestable := map[mediaKey]bool{} // completed movies and non-dropped shows must not retain legacy blocks
 	for _, it := range all.Movies {
 		if it.Movie == nil {
 			continue
@@ -275,11 +277,17 @@ func (a *App) SimklSync() bool {
 		}
 	}
 	for _, it := range append(all.Shows, all.Anime...) {
-		if it.Show == nil || !hideShows[it.Status] {
+		if it.Show == nil {
 			continue
 		}
-		if id, err := it.Show.IDs.TMDB.Int64(); err == nil && id != 0 {
-			hide[mediaKey{"tv", int(id)}] = it.Show.Title
+		id, err := it.Show.IDs.TMDB.Int64()
+		if err != nil || id == 0 {
+			continue
+		}
+		if k := (mediaKey{"tv", int(id)}); hideShows[it.Status] {
+			hide[k] = it.Show.Title
+		} else {
+			requestable[k] = true
 		}
 	}
 
@@ -314,11 +322,11 @@ func (a *App) SimklSync() bool {
 			continue
 		}
 		if a.Config.DryRun {
-			log.Printf("[dry run] Simkl: would take movie %d off the blocklist (watched or wanted again)", k.TMDB)
+			log.Printf("[dry run] Simkl: would take %s %d off the blocklist (requestable again)", k.Type, k.TMDB)
 			continue
 		}
 		if err := a.Seerr.Unblock(k); err != nil {
-			log.Printf("Simkl: unblock movie %d: %v", k.TMDB, err)
+			log.Printf("Simkl: unblock %s %d: %v", k.Type, k.TMDB, err)
 			continue
 		}
 		removed++

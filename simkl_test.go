@@ -49,7 +49,8 @@ func newFakeSimkl(t *testing.T) (*fakeSimkl, *httptest.Server) {
 			  {"status":"watching","show":{"title":"Netflix Show","ids":{"tmdb":201}}},
 			  {"status":"completed","show":{"title":"Old Show","ids":{"tmdb":202}}},
 			  {"status":"watching","show":{"title":"Sonarr Show","ids":{"tmdb":203}}},
-			  {"status":"plantowatch","show":{"title":"Maybe","ids":{"tmdb":204}}}],
+			  {"status":"plantowatch","show":{"title":"Maybe","ids":{"tmdb":204}}},
+			  {"status":"dropped","show":{"title":"Bad Show","ids":{"tmdb":205}}}],
 			 "anime":[{"status":"hold","show":{"title":"Paused","ids":{"tmdb":301}}}]}`))
 		default:
 			http.NotFound(w, r)
@@ -162,12 +163,12 @@ func TestSimklSyncAppliesHouseRules(t *testing.T) {
 	a, fsimkl, fsvc, _ := simklApp(t, time.Now())
 	a.SimklSync()
 	sort.Strings(fsvc.posted)
-	if got := fmt.Sprint(fsvc.posted); got != "[movie:102 tv:201 tv:301]" { // 101, 103, 107 are in Radarr
-		t.Errorf("blocklisted %s (want completed/dropped movies and watching/hold shows; not tv:202 already there, not tv:203, movie:101 (in Radarr now) or movie:103 managed by Sonarr/Radarr)", got)
+	if got := fmt.Sprint(fsvc.posted); got != "[movie:102 tv:205]" { // 101, 103, 107 are in Radarr
+		t.Errorf("blocklisted %s (want the dropped movie and the dropped show only; watching/hold/completed shows stay requestable)", got)
 	}
 	sort.Strings(fsvc.deleted)
-	if fmt.Sprint(fsvc.deleted) != "[movie:101 movie:103 movie:104]" {
-		t.Errorf("unblocked %v, want completed movies and the movie back on plan to watch requestable", fsvc.deleted)
+	if fmt.Sprint(fsvc.deleted) != "[movie:101 movie:103 movie:104 tv:202]" {
+		t.Errorf("unblocked %v, want completed movies, the movie back on plan to watch and the completed show requestable", fsvc.deleted)
 	}
 	if fmt.Sprint(fsvc.exclusions) != "[105]" {
 		t.Errorf("exclusions %v, want the wanted movie that's already in the collection", fsvc.exclusions)
