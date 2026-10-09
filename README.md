@@ -119,6 +119,9 @@ everywhere), because Sonarr and qBittorrent report their own paths.
 
 ## Endpoints
 
+`plex-clean healthcheck` (as the Docker healthcheck command) checks the running server's `/healthz` and exits 0 or 1; the image has no shell or curl.
+
+
 - `POST /plex`: Plex webhook (Settings → Webhooks).
 - `POST /jellyfin`: Jellyfin Webhook plugin, notification type "Playback Stop".
 - `POST /`: either, detected by content type.

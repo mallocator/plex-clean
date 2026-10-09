@@ -87,6 +87,10 @@ type Config struct {
 }
 
 func main() {
+	// "plex-clean healthcheck" is the Docker healthcheck: the image has no shell or curl.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(healthcheck(getInt("PORT", 3333)))
+	}
 	config := loadConfig()
 	queue, err := LoadQueue(config.StateFile)
 	if err != nil {
@@ -137,6 +141,22 @@ func main() {
 		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Radarr != nil,
 		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders), app.Simkl != nil)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), app.Routes()))
+}
+
+// healthcheck asks the running server's /healthz; 0 = healthy.
+func healthcheck(port int) int {
+	c := &http.Client{Timeout: 10 * time.Second}
+	resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, resp.Status)
+		return 1
+	}
+	return 0
 }
 
 // loopRetry runs fn now and then every interval, or after retry if fn reports failure.
