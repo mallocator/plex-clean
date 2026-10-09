@@ -62,7 +62,7 @@ func pollApp(t *testing.T, jf, px *httptest.Server, now time.Time) *App {
 		t.Fatal(err)
 	}
 	return &App{
-		Config: Config{WatchedLookback: 48 * time.Hour, WatchedBurstMax: 3, WatchedSeenFile: filepath.Join(dir, "seen.json")},
+		Config: Config{WatchedLookback: 48 * time.Hour, WatchedMaxAge: 4 * time.Hour, WatchedBurstMax: 3, WatchedSeenFile: filepath.Join(dir, "seen.json")},
 		Queue:  q, Jellyfin: NewJellyfin(jf.URL, "k"), Plex: NewPlex(px.URL, "/volume1/Video"),
 		Now: func() time.Time { return now },
 	}
@@ -110,6 +110,15 @@ func TestWatchedPoll(t *testing.T) {
 	a.WatchedPoll()
 	if got := queued(a); len(got) != 1 {
 		t.Fatalf("burst queued episodes: %v", got)
+	}
+
+	// a mark that shows up already a day old was synced (WatchState copies the original date): ignored
+	f.mu.Lock()
+	f.jellyfin = append(f.jellyfin, jfEpisode("j5", "The Simpsons", 38, 2, now.Add(-23*time.Hour)))
+	f.mu.Unlock()
+	a.WatchedPoll()
+	if got := queued(a); len(got) != 1 {
+		t.Fatalf("synced mark queued: %v", got)
 	}
 
 	// marks older than the lookback never count

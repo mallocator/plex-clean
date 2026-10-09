@@ -78,6 +78,7 @@ type Config struct {
 
 	WatchedPoll     time.Duration // poll the servers' watched marks (watched_poll.go); 0 disables
 	WatchedLookback time.Duration // marks older than this are ignored
+	WatchedMaxAge   time.Duration // a new mark older than this when first seen is a synced one and is ignored
 	WatchedBurstMax int           // more new marks than this in one poll are held, not queued
 	WatchedSeenFile string
 
@@ -211,6 +212,7 @@ func loadConfig() Config {
 
 		WatchedPoll:     getDuration("WATCHED_POLL_INTERVAL", 10*time.Minute),
 		WatchedLookback: getDuration("WATCHED_LOOKBACK", 48*time.Hour),
+		WatchedMaxAge:   getDuration("WATCHED_MAX_AGE", 4*time.Hour),
 		WatchedBurstMax: getInt("WATCHED_BURST_MAX", 25),
 		WatchedSeenFile: getEnv("WATCHED_SEEN_FILE", "/data/watched-seen.json"),
 

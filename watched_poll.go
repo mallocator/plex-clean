@@ -17,9 +17,12 @@ import (
 // A server's watched mark is the truth, so an episode marked watched by hand counts too, and a viewing on one server
 // counts without waiting for WatchState to sync it to the other.
 //
-// Safeguards: the first run only records what is already marked (baseline, nothing queued), and a poll finding more
-// than WATCHED_BURST_MAX new marks (a mass sync or a "mark season watched") queues none of them and logs them, so a
-// faulty sync can't trigger mass deletion. Deletion rules are unchanged: Sonarr tag, then the grace period.
+// Safeguards: the first run only records what is already marked (baseline, nothing queued); a mark that is already
+// older than WATCHED_MAX_AGE when it first shows up is a synced one (WatchState copies the original date, often hours
+// or days later, and has copied wrong marks) and is ignored; and a poll finding more than WATCHED_BURST_MAX new marks
+// (a mass sync or a "mark season watched") queues none of them, so a faulty sync can't trigger mass deletion.
+// MaxAge must cover a long playback, because Jellyfin dates a viewing from its start. Deletion rules are unchanged:
+// Sonarr tag, then the grace period.
 func (a *App) WatchedPoll() {
 	since := a.now().Add(-a.Config.WatchedLookback)
 	var found []polledWatch
@@ -39,15 +42,22 @@ func (a *App) WatchedPoll() {
 	}
 	seen := a.seenWatched()
 	baseline := seen.Empty()
-	var fresh []polledWatch
+	var fresh, stale []polledWatch
 	for _, w := range found {
-		if !seen.Has(w.key()) {
+		if seen.Has(w.key()) {
+			continue
+		}
+		seen.Add(w.key(), w.At)
+		if !baseline && w.At.Before(a.now().Add(-a.Config.WatchedMaxAge)) {
+			stale = append(stale, w)
+		} else {
 			fresh = append(fresh, w)
 		}
 	}
-	for _, w := range fresh {
-		seen.Add(w.key(), w.At)
+	for _, w := range stale {
+		log.Printf("Watched poll: ignoring %s: marked %s ago, probably synced from the other server", w, a.now().Sub(w.At).Round(time.Minute))
 	}
+	metrics.Add("plexclean_watched_poll_stale_total", float64(len(stale)))
 	seen.Prune(since.Add(-24 * time.Hour))
 	if err := seen.Save(); err != nil {
 		log.Printf("Watched poll: saving %s: %v", seen.path, err)
