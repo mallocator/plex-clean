@@ -1,7 +1,8 @@
 // plex-clean applies house rules to media after it has been watched.
 //
 // It receives "watched" events from Plex (media.scrobble webhooks) and Jellyfin (Webhook plugin,
-// PlaybackStop with PlayedToCompletion), writes a marker file per watched item, and queues episodes.
+// PlaybackStop with PlayedToCompletion), writes a marker file per watched item, and queues episodes. A poll of both
+// servers' watched marks catches what the webhooks miss, including episodes marked watched by hand (watched_poll.go).
 // After a grace period, episodes of shows that Sonarr manages are handled according to the show's tags:
 //   - DELETE_TAG (default "delete-after-watch"): the episode file is deleted through Sonarr.
 //   - ARCHIVE_TAG (default "archive"): the file is copied to ARCHIVE_DIR/<show>/Season NN/, then deleted through Sonarr.
@@ -75,6 +76,11 @@ type Config struct {
 	StallTimeout   time.Duration // Sonarr/Radarr torrents without data for this long are rejected; 0 disables
 	StatsInterval  time.Duration // refresh of the /metrics gauges (metrics.go); 0 disables
 
+	WatchedPoll     time.Duration // poll the servers' watched marks (watched_poll.go); 0 disables
+	WatchedLookback time.Duration // marks older than this are ignored
+	WatchedBurstMax int           // more new marks than this in one poll are held, not queued
+	WatchedSeenFile string
+
 	DeleteRoots   []string // deletions only below these (the downloads share); see guard.go
 	ProtectedDirs []string // never deleted in, in addition to the archive directories
 }
@@ -118,6 +124,9 @@ func main() {
 	}
 	if app.Seerr != nil && app.Sonarr != nil && config.SeerrReconcile > 0 {
 		go loop(config.SeerrReconcile, app.SeerrReconcile)
+	}
+	if (app.Jellyfin != nil || app.Plex != nil) && config.WatchedPoll > 0 {
+		go loop(config.WatchedPoll, app.WatchedPoll)
 	}
 	if app.Simkl != nil && config.SimklInterval > 0 {
 		go loopRetry(config.SimklInterval, 10*time.Minute, app.SimklSync)
@@ -199,6 +208,11 @@ func loadConfig() Config {
 		SweepMaxRemove: getInt("SWEEP_MAX_REMOVE", 5),
 		StallTimeout:   getDuration("STALL_TIMEOUT", 12*time.Hour),
 		StatsInterval:  getDuration("STATS_INTERVAL", 2*time.Minute),
+
+		WatchedPoll:     getDuration("WATCHED_POLL_INTERVAL", 10*time.Minute),
+		WatchedLookback: getDuration("WATCHED_LOOKBACK", 48*time.Hour),
+		WatchedBurstMax: getInt("WATCHED_BURST_MAX", 25),
+		WatchedSeenFile: getEnv("WATCHED_SEEN_FILE", "/data/watched-seen.json"),
 
 		DeleteRoots:   splitList(getEnv("DELETE_ROOTS", "/downloads")),
 		ProtectedDirs: splitList(getEnv("PROTECTED_DIRS", "")),

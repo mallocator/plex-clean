@@ -7,6 +7,13 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    No Tautulli needed. Every watched item is logged, and optionally gets a marker file in `OUTPUT_DIR`.
    A "movie" whose title is a release name (`Show S17E01 ...`) counts as that episode: loose episode files in a
    download folder show up as movies in Jellyfin's mixed libraries.
+   **Watched poll** (every `WATCHED_POLL_INTERVAL`): webhooks get lost (a client reports a wrong stop position, the
+   container restarts), so plex-clean also asks the servers which episodes are *marked* watched: every Jellyfin user,
+   and the Plex owner account (other Plex accounts rely on the webhook). Marks since `WATCHED_LOOKBACK` it hasn't
+   seen are queued with their watch time; an episode marked watched by hand counts too. Safeguards: the first run
+   only records the current marks, and more than `WATCHED_BURST_MAX` new marks in one poll (a mass sync, e.g. by
+   WatchState) are logged as held instead of queued (`plexclean_watched_poll_held_total`). Known marks are kept in
+   `WATCHED_SEEN_FILE`.
 2. **Episodes wait a grace period** (default 24 h) in a persistent queue, so you can rewatch or catch up.
    Watching the same episode again, or in the other server, doesn't restart the clock.
 3. **Then the show's rule applies:**
@@ -98,6 +105,10 @@ refused and logged.
 | `STALL_TIMEOUT` | `12h` | Sonarr/Radarr torrents without data this long are rejected; `0` disables |
 | `STATS_INTERVAL` | `2m` | Refresh of the `/metrics` gauges; `0` disables |
 | `SEERR_RECONCILE_INTERVAL` | `24h` | Reset orphaned "processing" TV records in Seerr; `0` disables (needs `SEERR_URL`/`SEERR_API_KEY` and Sonarr) |
+| `WATCHED_POLL_INTERVAL` | `10m` | Poll Jellyfin/Plex watched marks; `0` disables |
+| `WATCHED_LOOKBACK` | `48h` | Older marks never count |
+| `WATCHED_BURST_MAX` | `25` | More new marks than this in one poll are held, not queued |
+| `WATCHED_SEEN_FILE` | `/data/watched-seen.json` | Marks already handled |
 | `DELETE_ROOTS` | `/downloads` | Deletions only below these |
 | `PROTECTED_DIRS` | | Never deleted in, besides the archive dirs |
 | `DEBUG` | `false` | Verbose logging |

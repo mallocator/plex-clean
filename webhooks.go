@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,9 @@ type App struct {
 	Plex     *Plex
 	Jellyfin *Jellyfin
 	Now      func() time.Time // for tests
+
+	seen     *seenSet // watched marks the poll already handled (watched_poll.go)
+	seenOnce sync.Once
 }
 
 func (a *App) now() time.Time {
@@ -195,11 +199,14 @@ func (a *App) handleJellyfin(w http.ResponseWriter, r *http.Request) {
 }
 
 // Watched records a finished viewing: marker file, and episodes go into the grace-period queue.
-func (a *App) Watched(e WatchEvent) {
+func (a *App) Watched(e WatchEvent) { a.watchedAt(e, a.now()) }
+
+// watchedAt is Watched for a viewing at a known time (the poll): the grace period counts from then.
+func (a *App) watchedAt(e WatchEvent, at time.Time) {
 	metrics.Inc("plexclean_watched_total", "source", e.Source)
 	a.writeMarker(e)
 	if e.Type == "episode" {
-		if a.Queue.Add(e, a.now()) {
+		if a.Queue.Add(e, at) {
 			log.Printf("Queued %s S%02dE%02d (watched in %s), due in %s", e.Series, e.Season, e.Episode, e.Source, a.Config.GracePeriod)
 		}
 	}
