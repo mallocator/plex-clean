@@ -61,6 +61,9 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
 7. **Download health** (with the sweep): Sonarr/Radarr downloads that will never import are removed from qBittorrent
    through the app's queue, blocklisted, and searched again: fakes (an executable or archive instead of a video,
    nothing importable) and torrents without any data for `STALL_TIMEOUT`. At most `SWEEP_MAX_REMOVE` per run.
+   A download that reports nothing importable but whose video is already gone from the downloads folder was moved by
+   an import that failed halfway (e.g. Sonarr's `database is locked` on a busy disk): it is not blocklisted; the series
+   or movie is rescanned so the app picks up the file, and the queue entry is dropped without searching again.
 8. **Seerr orphans** (daily, `SEERR_RECONCILE_INTERVAL`): Seerr TV records stuck in "processing" whose series is no
    longer in Sonarr (by TVDB and TMDB ID), with no request and nothing available, are reset (`DELETE /api/v1/media/<id>`;
    files untouched). Seerr's own scan skips records created from TMDB alone, which otherwise stay processing forever and
