@@ -70,12 +70,14 @@ func TestCheckImportsAndStarvedGroups(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/v3/calendar":
 			json.NewEncoder(w).Encode(calendar)
-		case r.URL.Path == "/api/v3/history/episode":
-			if r.URL.Query().Get("episodeId") != "4" || r.URL.Query().Get("eventType") != "grabbed" {
+		case r.URL.Path == "/api/v3/history": // Sonarr: paged, all event types
+			if r.URL.Query().Get("episodeId") != "4" {
 				t.Errorf("history query %s", r.URL.RawQuery)
 			}
-			json.NewEncoder(w).Encode([]map[string]any{{"id": 7, "eventType": "grabbed", "date": "2026-10-16T10:00:00Z"},
-				{"id": 9, "eventType": "grabbed", "date": "2026-10-16T12:00:00Z"}})
+			json.NewEncoder(w).Encode(map[string]any{"records": []map[string]any{
+				{"id": 7, "eventType": "grabbed", "date": "2026-10-16T10:00:00Z"},
+				{"id": 9, "eventType": "grabbed", "date": "2026-10-16T12:00:00Z"},
+				{"id": 11, "eventType": "downloadFolderImported", "date": "2026-10-16T13:00:00Z"}}})
 		case strings.HasPrefix(r.URL.Path, "/api/v3/history/failed/") && r.Method == http.MethodPost:
 			failed = append(failed, strings.TrimPrefix(r.URL.Path, "/api/v3/history/failed/"))
 		default:

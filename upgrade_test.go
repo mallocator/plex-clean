@@ -174,3 +174,50 @@ func TestUpgradeSearch(t *testing.T) {
 		t.Fatalf("limit: searched %v, want 1", f.searched)
 	}
 }
+
+func TestUpgradeSkipsEpisodesPlayedInJellyfin(t *testing.T) {
+	now := time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC)
+	jf := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Users":
+			json.NewEncoder(w).Encode([]map[string]any{{"Id": "u1"}})
+		case "/Users/u1/Items":
+			json.NewEncoder(w).Encode(map[string]any{"Items": []map[string]any{
+				{"SeriesName": "The Simpsons", "ParentIndexNumber": 38, "IndexNumber": 2}}})
+		default:
+			json.NewEncoder(w).Encode([]any{}) // sessions
+		}
+	}))
+	defer jf.Close()
+	var searched []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ep := func(id, e int) map[string]any {
+			return map[string]any{"id": id, "seasonNumber": 38, "episodeNumber": e, "airDateUtc": now.Add(-30 * 24 * time.Hour).Format(time.RFC3339),
+				"monitored": true, "hasFile": false, "series": map[string]any{"title": "The Simpsons", "qualityProfileId": 4}}
+		}
+		switch r.URL.Path {
+		case "/api/v3/qualityprofile":
+			json.NewEncoder(w).Encode([]map[string]any{{"id": 4, "cutoffFormatScore": 200}})
+		case "/api/v3/calendar":
+			json.NewEncoder(w).Encode([]any{})
+		case "/api/v3/wanted/missing":
+			json.NewEncoder(w).Encode(map[string]any{"records": []map[string]any{ep(1, 2), ep(2, 3)}})
+		case "/api/v3/queue":
+			json.NewEncoder(w).Encode(map[string]any{"records": []any{}})
+		case "/api/v3/release":
+			searched = append(searched, r.URL.Query().Get("episodeId"))
+			json.NewEncoder(w).Encode([]any{})
+		}
+	}))
+	defer srv.Close()
+	a := newTestApp(t)
+	a.Now = func() time.Time { return now }
+	a.Config.UpgradeWindow, a.Config.UpgradeFallback, a.Config.UpgradeMaxSearches = 14*24*time.Hour, 48*time.Hour, 6
+	a.Config.UpgradeStateFile = filepath.Join(t.TempDir(), "upgrades.json")
+	a.Sonarr = NewSonarr(srv.URL, "k")
+	a.Jellyfin = NewJellyfin(jf.URL, "k")
+	a.UpgradeSearch()
+	if strings.Join(searched, ",") != "2" {
+		t.Errorf("searched %v, want only S38E03 (S38E02 was played: watched and deleted, not fetched again)", searched)
+	}
+}

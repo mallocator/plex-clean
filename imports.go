@@ -35,7 +35,7 @@ type importFile struct {
 		RunTime    string `json:"runTime"`
 		Resolution string `json:"resolution"` // "1920x1080"
 	}
-	HistoryQuery string // "history/episode?episodeId=1" etc.
+	HistoryQuery string // Sonarr "history?episodeId=1&pageSize=50" (paged), Radarr "history/movie?movieId=2" (a list)
 }
 
 // minutes parses Sonarr/Radarr runtimes ("1:04:32", "44:10").
@@ -231,14 +231,26 @@ func (a *App) CheckImports() {
 
 // flagMislabeled marks the file's last grab as failed: the app blocklists that release and searches again.
 func (a *App) flagMislabeled(app *Arr, f importFile) bool {
-	var hist []struct {
+	type event struct {
 		ID        int    `json:"id"`
 		EventType string `json:"eventType"`
 		Date      string `json:"date"`
 	}
-	if err := app.do("GET", "/api/v3/"+f.HistoryQuery+"&eventType=grabbed", nil, &hist); err != nil {
+	var raw json.RawMessage
+	if err := app.do("GET", "/api/v3/"+f.HistoryQuery, nil, &raw); err != nil {
 		log.Printf("Imports (%s): history of %s: %v", f.App, f.Name, err)
 		return false
+	}
+	var hist []event
+	if err := json.Unmarshal(raw, &hist); err != nil { // Sonarr pages it
+		var page struct {
+			Records []event `json:"records"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil {
+			log.Printf("Imports (%s): history of %s: %v", f.App, f.Name, err)
+			return false
+		}
+		hist = page.Records
 	}
 	id := 0
 	latest := ""
@@ -313,7 +325,7 @@ func (a *App) sonarrImports(now time.Time) ([]importFile, error) {
 		}
 		name := fmt.Sprintf("%s S%02dE%02d", e.Series.Title, e.SeasonNumber, e.EpisodeNumber)
 		if f, ok := e.EpisodeFile.importFile(fmt.Sprintf("sonarr:%d", e.EpisodeFile.ID), "Sonarr", name,
-			fmt.Sprintf("history/episode?episodeId=%d", e.ID)); ok && now.Sub(f.Added) <= a.Config.UpgradeWindow {
+			fmt.Sprintf("history?episodeId=%d&pageSize=50", e.ID)); ok && now.Sub(f.Added) <= a.Config.UpgradeWindow {
 			out = append(out, f)
 		}
 	}

@@ -24,7 +24,8 @@ import (
 //   - the app decides: plex-clean grabs the first approved release of an interactive search (the app's own order);
 //   - fallback: with no file and nothing approved after UPGRADE_FALLBACK, the best release rejected only for the size
 //     floor is grabbed, else the best 720p one. Upgrades continue after that until the window ends;
-//   - watched items and files being played are skipped; at most UPGRADE_MAX_SEARCHES searches per run;
+//   - watched items (grace queue, Jellyfin played marks) and files being played are skipped; at most
+//     UPGRADE_MAX_SEARCHES searches per run;
 //   - groups whose imports measured starved (imports.go) are passed over when the app approved another release.
 
 type arrRelease struct {
@@ -389,9 +390,18 @@ func (a *App) sonarrUpgradeItems(now time.Time) ([]upgradeItem, error) {
 	if err := a.Sonarr.do("GET", "/api/v3/wanted/missing?pageSize=200&monitored=true&includeSeries=true&sortKey=airDateUtc&sortDirection=descending", nil, &missing); err != nil {
 		return nil, err
 	}
-	pending := map[string]bool{}
+	watched := map[string]bool{} // the grace queue, plus anything any Jellyfin user marked played (WatchState mirrors Plex)
 	for _, p := range a.Queue.Items() {
-		pending[p.Key()] = true
+		watched[p.Key()] = true
+	}
+	if a.Jellyfin != nil {
+		played, err := a.Jellyfin.PlayedEpisodeKeys()
+		if err != nil {
+			return nil, err // without it, a watched and deleted episode could be fetched again
+		}
+		for k := range played {
+			watched[k] = true
+		}
 	}
 	seen := map[int]bool{}
 	var items []upgradeItem
@@ -414,7 +424,7 @@ func (a *App) sonarrUpgradeItems(now time.Time) ([]upgradeItem, error) {
 		} else if e.HasFile {
 			continue
 		}
-		it.Watched = pending[PendingItem{Series: e.Series.Title, Season: e.SeasonNumber, Episode: e.EpisodeNumber}.Key()]
+		it.Watched = watched[PendingItem{Series: e.Series.Title, Season: e.SeasonNumber, Episode: e.EpisodeNumber}.Key()]
 		items = append(items, it)
 	}
 	return items, nil
@@ -490,6 +500,34 @@ func (a *App) radarrUpgradeItems(now time.Time) ([]upgradeItem, error) {
 		items = append(items, it)
 	}
 	return items, nil
+}
+
+// PlayedEpisodeKeys returns the episodes any Jellyfin user has played, as queue keys (show|season|episode).
+func (j *Jellyfin) PlayedEpisodeKeys() (map[string]bool, error) {
+	var users []struct {
+		ID string `json:"Id"`
+	}
+	if err := j.get("/Users", &users); err != nil {
+		return nil, err
+	}
+	keys := map[string]bool{}
+	for _, u := range users {
+		var items struct {
+			Items []struct {
+				SeriesName  string `json:"SeriesName"`
+				ParentIndex int    `json:"ParentIndexNumber"`
+				Index       int    `json:"IndexNumber"`
+			} `json:"Items"`
+		}
+		q := url.Values{"Recursive": {"true"}, "IncludeItemTypes": {"Episode"}, "IsPlayed": {"true"}}
+		if err := j.get("/Users/"+u.ID+"/Items?"+q.Encode(), &items); err != nil {
+			return nil, err
+		}
+		for _, it := range items.Items {
+			keys[PendingItem{Series: it.SeriesName, Season: it.ParentIndex, Episode: it.Index}.Key()] = true
+		}
+	}
+	return keys, nil
 }
 
 // PlayedMovies returns the TMDB IDs of movies any Jellyfin user has played.
