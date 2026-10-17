@@ -105,7 +105,7 @@ func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 func init() {
 	metrics.Help("plexclean_watched_total", "Finished viewings received, by source (plex, jellyfin).")
-	metrics.Help("plexclean_actions_total", "Actions taken: episode_deleted, episode_archived, file_deleted, file_archived, movie_archived, torrent_swept, download_rejected, routed, tagged.")
+	metrics.Help("plexclean_actions_total", "Actions taken: episode_deleted, episode_archived, file_deleted, file_archived, movie_archived, torrent_swept, download_rejected, download_rescanned, upgrade_grabbed (reason new, upgrade, fallback), import_mislabeled, routed, tagged.")
 	metrics.Help("plexclean_freed_bytes_total", "Bytes deleted from the downloads share.")
 	metrics.Help("plexclean_pending_items", "Watched episodes waiting for their grace period.")
 	metrics.Help("plexclean_qbittorrent_torrents", "Torrents by qBittorrent state.")
@@ -115,6 +115,11 @@ func init() {
 	metrics.Help("plexclean_arr_library_bytes", "Size on disk of everything Sonarr/Radarr manage.")
 	metrics.Help("plexclean_arr_library_files", "Episode files (Sonarr) or movies with a file (Radarr).")
 	metrics.Help("plexclean_streams", "Active playback sessions by server and kind (direct, transcode_hw, transcode_sw).")
+	metrics.Help("plexclean_upgrade_candidates", "Episodes/movies the upgrade search looks after (tracked) and those due for a search now (due).")
+	metrics.Help("plexclean_recent_import_mb_per_minute", "Size per minute of runtime of each file imported within the upgrade window.")
+	metrics.Help("plexclean_recent_imports_below_floor", "Recent imports under IMPORT_MIN_MB_PER_MIN, by app.")
+	metrics.Help("plexclean_group_mb_per_minute", "Median MB/min of a release group's last imports (groups with 3+ files).")
+	metrics.Help("plexclean_upgrade_searches_total", "Interactive searches the upgrade search ran, by app.")
 	metrics.Help("plexclean_stats_last_success_timestamp_seconds", "Unix time each stats source last answered.")
 }
 

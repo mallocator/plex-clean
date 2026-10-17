@@ -69,6 +69,19 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    files untouched). Seerr's own scan skips records created from TMDB alone, which otherwise stay processing forever and
    block requests for new seasons. Skipped when Sonarr reports no series; at most 50 resets per run.
 
+9. **Upgrade search** (every `UPGRADE_INTERVAL`): Sonarr and Radarr only see new releases through RSS, and the sources
+   with the best ones (aggregators) have none. plex-clean searches for episodes aired and movies added/available within
+   `UPGRADE_WINDOW` that are missing or below their profile's cutoff (format score or quality), and for older missing
+   ones daily: every 30 min for the first 6 h, hourly until 2 days, then every 6 h. It grabs the app's first approved
+   release (the app's own ranking). With no file and nothing approved after `UPGRADE_FALLBACK`, the requirement is
+   relaxed: the best release rejected only for the size floor, else the best 720p one. Watched items (pending queue,
+   Jellyfin played movies) and files playing in Jellyfin/Plex are skipped; at most `UPGRADE_MAX_SEARCHES` per run.
+10. **Import checks** (with the upgrade search): every file imported within `UPGRADE_WINDOW` is measured in MB per
+   minute of runtime (`/metrics`). A file whose picture is smaller than its quality claims (a "1080p" that is 720p) has
+   its grab marked failed, so the app blocklists it and searches again. Each release group's measured MB/min (last 20
+   files) is kept; the upgrade search passes over approved releases of groups whose median stays under
+   `IMPORT_MIN_MB_PER_MIN` when the app approved another release too.
+
 **The archive is never touched.** Every deletion (Sonarr episode files, files found by name, the torrent sweep,
 download health) first checks the path: it must be below `DELETE_ROOTS` (default `/downloads`) and outside
 `ARCHIVE_DIR`, `ANIME_ARCHIVE_DIR`, `MOVIE_ARCHIVE_DIR` and `PROTECTED_DIRS`. Archiving only copies into the archive. Anything else is
@@ -106,6 +119,12 @@ refused and logged.
 | `SWEEP_SKIP_CATEGORIES` | `sonarr,radarr` | Categories whose torrents their apps remove |
 | `SWEEP_MAX_REMOVE` | `5` | Safety limit, see above; also the download health limit per run |
 | `STALL_TIMEOUT` | `12h` | Sonarr/Radarr torrents without data this long are rejected; `0` disables |
+| `UPGRADE_INTERVAL` | `10m` | Upgrade search and import checks; `0` disables |
+| `UPGRADE_WINDOW` | `336h` | New episodes/movies are looked after for 14 days |
+| `UPGRADE_FALLBACK` | `48h` | Without anything acceptable this long, the size floor (then 1080p) is relaxed |
+| `UPGRADE_MAX_SEARCHES` | `6` | Interactive searches per run (each queries every automatic indexer) |
+| `UPGRADE_STATE_FILE`, `GROUP_STATS_FILE` | `/data/upgrades.json`, `/data/groups.json` | Search schedule, measured release groups |
+| `IMPORT_MIN_MB_PER_MIN` | `12` | Imports below are counted; groups staying below are passed over |
 | `STATS_INTERVAL` | `2m` | Refresh of the `/metrics` gauges; `0` disables |
 | `SEERR_RECONCILE_INTERVAL` | `24h` | Reset orphaned "processing" TV records in Seerr; `0` disables (needs `SEERR_URL`/`SEERR_API_KEY` and Sonarr) |
 | `WATCHED_POLL_INTERVAL` | `10m` | Poll Jellyfin/Plex watched marks; `0` disables |

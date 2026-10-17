@@ -28,6 +28,11 @@ type App struct {
 
 	seen     *seenSet // watched marks the poll already handled (watched_poll.go)
 	seenOnce sync.Once
+
+	upgrades     *upgradeLog // upgrade search state (upgrade.go)
+	upgradesOnce sync.Once
+	groups       *groupStats // measured MB/min per release group (imports.go)
+	groupsOnce   sync.Once
 }
 
 func (a *App) now() time.Time {

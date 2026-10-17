@@ -27,8 +27,9 @@ type queueItem struct {
 	Protocol       string `json:"protocol"`
 	TrackedState   string `json:"trackedDownloadState"`
 	OutputPath     string `json:"outputPath"`
-	SeriesID       int    `json:"seriesId"` // Sonarr
-	MovieID        int    `json:"movieId"`  // Radarr
+	SeriesID       int    `json:"seriesId"`  // Sonarr
+	EpisodeID      int    `json:"episodeId"` // Sonarr
+	MovieID        int    `json:"movieId"`   // Radarr
 	StatusMessages []struct {
 		Messages []string `json:"messages"`
 	} `json:"statusMessages"`

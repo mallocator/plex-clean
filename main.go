@@ -11,7 +11,8 @@
 // their requester's folder (USER_FOLDERS, see routing.go). With Simkl configured, Seerr's blocklist and Radarr follow
 // the owner's Simkl lists (simkl.go). Shows Sonarr doesn't manage can be listed in
 // ARCHIVE_SHOWS / DELETE_SHOWS instead; their files are found in SEARCH_DIRS by release name. Separately, a
-// periodic sweep removes completed qBittorrent torrents whose files are gone (formerly qbittorrent-cleaner).
+// periodic sweep removes completed qBittorrent torrents whose files are gone (formerly qbittorrent-cleaner), and an
+// upgrade search looks for better releases of new episodes and movies (upgrade.go), measuring what arrives (imports.go).
 // /metrics serves Prometheus metrics (metrics.go).
 package main
 
@@ -82,6 +83,14 @@ type Config struct {
 	WatchedBurstMax int           // more new marks than this in one poll are held, not queued
 	WatchedSeenFile string
 
+	UpgradeInterval    time.Duration // upgrade search runs (upgrade.go); 0 disables
+	UpgradeWindow      time.Duration // new episodes/movies are looked after this long
+	UpgradeFallback    time.Duration // without anything acceptable this long, the size floor (then 1080p) is relaxed
+	UpgradeMaxSearches int           // interactive searches per run (each queries every automatic indexer)
+	UpgradeStateFile   string
+	ImportMinMBPerMin  float64 // imports below this are counted, and groups that stay below it passed over (imports.go)
+	GroupStatsFile     string
+
 	DeleteRoots   []string // deletions only below these (the downloads share); see guard.go
 	ProtectedDirs []string // never deleted in, in addition to the archive directories
 }
@@ -133,13 +142,16 @@ func main() {
 	if (app.Jellyfin != nil || app.Plex != nil) && config.WatchedPoll > 0 {
 		go loop(config.WatchedPoll, app.WatchedPoll)
 	}
+	if (app.Sonarr != nil || app.Radarr != nil) && config.UpgradeInterval > 0 {
+		go loop(config.UpgradeInterval, func() { app.CheckImports(); app.UpgradeSearch() })
+	}
 	if app.Simkl != nil && config.SimklInterval > 0 {
 		go loopRetry(config.SimklInterval, 10*time.Minute, app.SimklSync)
 	}
 
-	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d, simkl %v)",
+	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d, simkl %v, upgrades %v)",
 		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Radarr != nil,
-		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders), app.Simkl != nil)
+		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders), app.Simkl != nil, config.UpgradeInterval)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), app.Routes()))
 }
 
@@ -235,6 +247,14 @@ func loadConfig() Config {
 		WatchedMaxAge:   getDuration("WATCHED_MAX_AGE", 4*time.Hour),
 		WatchedBurstMax: getInt("WATCHED_BURST_MAX", 25),
 		WatchedSeenFile: getEnv("WATCHED_SEEN_FILE", "/data/watched-seen.json"),
+
+		UpgradeInterval:    getDuration("UPGRADE_INTERVAL", 10*time.Minute),
+		UpgradeWindow:      getDuration("UPGRADE_WINDOW", 14*24*time.Hour),
+		UpgradeFallback:    getDuration("UPGRADE_FALLBACK", 48*time.Hour),
+		UpgradeMaxSearches: getInt("UPGRADE_MAX_SEARCHES", 6),
+		UpgradeStateFile:   getEnv("UPGRADE_STATE_FILE", "/data/upgrades.json"),
+		ImportMinMBPerMin:  float64(getInt("IMPORT_MIN_MB_PER_MIN", 12)),
+		GroupStatsFile:     getEnv("GROUP_STATS_FILE", "/data/groups.json"),
 
 		DeleteRoots:   splitList(getEnv("DELETE_ROOTS", "/downloads")),
 		ProtectedDirs: splitList(getEnv("PROTECTED_DIRS", "")),
