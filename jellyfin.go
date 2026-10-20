@@ -77,3 +77,51 @@ func (j *Jellyfin) FavoriteMovies(users []string) (map[int]bool, error) {
 	}
 	return ids, nil
 }
+
+// MergeArchiveVersions links the Jellyfin items of one film (TMDB id) below pathPrefix into one item with several
+// versions; Jellyfin groups versions by itself only inside a per-movie folder, and the archive is flat. Groups of
+// more than six items are refused (a broken filter or a mismatch, not versions). Returns how many items were merged.
+func (j *Jellyfin) MergeArchiveVersions(tmdbID int, pathPrefix string) (int, error) {
+	var items struct {
+		Items []struct {
+			ID          string            `json:"Id"`
+			Path        string            `json:"Path"`
+			ProviderIds map[string]string `json:"ProviderIds"`
+		} `json:"Items"`
+	}
+	q := url.Values{"Recursive": {"true"}, "IncludeItemTypes": {"Movie"}, "Fields": {"ProviderIds,Path"}}
+	if err := j.get("/Items?"+q.Encode(), &items); err != nil {
+		return 0, err
+	}
+	var ids []string
+	for _, it := range items.Items {
+		if !strings.HasPrefix(it.Path, strings.TrimRight(pathPrefix, "/")+"/") {
+			continue
+		}
+		for k, v := range it.ProviderIds {
+			if strings.EqualFold(k, "tmdb") && v == strconv.Itoa(tmdbID) {
+				ids = append(ids, it.ID)
+			}
+		}
+	}
+	if len(ids) < 2 {
+		return 0, nil
+	}
+	if len(ids) > 6 {
+		return 0, fmt.Errorf("%d items for tmdb %d, not merging", len(ids), tmdbID)
+	}
+	req, err := http.NewRequest("POST", j.BaseURL+"/Videos/MergeVersions?ids="+strings.Join(ids, ","), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("MediaBrowser Token=%q", j.APIKey))
+	resp, err := j.Client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	resp.Body.Close()
+	if !isSuccess(resp.StatusCode) {
+		return 0, fmt.Errorf("jellyfin merge versions: %s", resp.Status)
+	}
+	return len(ids), nil
+}

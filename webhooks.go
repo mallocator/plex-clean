@@ -33,6 +33,9 @@ type App struct {
 	upgradesOnce sync.Once
 	groups       *groupStats // measured MB/min per release group (imports.go)
 	groupsOnce   sync.Once
+
+	mergeMu       sync.Mutex
+	pendingMerges map[int]time.Time // archived movies with another version: merge in Jellyfin once it has scanned them
 }
 
 func (a *App) now() time.Time {

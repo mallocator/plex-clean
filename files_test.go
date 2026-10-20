@@ -182,10 +182,10 @@ func TestSonarrTagAppliesToFilesFoundByName(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dl, "The.Simpsons.S38E05.1080p.mkv")); !os.IsNotExist(err) {
 		t.Error("tagged delete-after-watch: file should be deleted")
 	}
-	if _, err := os.Stat(filepath.Join(a.Config.ArchiveDir, "Futurama", "Season 14", "Futurama S14E01 1080p.mkv")); err != nil {
+	if _, err := os.Stat(filepath.Join(a.Config.ArchiveDir, "Futurama", "Futurama S14E01 1080p.mkv")); err != nil {
 		t.Errorf("tagged archive: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(a.Config.AnimeArchiveDir, "Frieren", "Season 02", "Frieren.S02E03.1080p.mkv")); err != nil {
+	if _, err := os.Stat(filepath.Join(a.Config.AnimeArchiveDir, "Frieren", "Frieren.S02E03.1080p.mkv")); err != nil {
 		t.Errorf("anime goes to the anime archive: %v", err)
 	}
 	if len(fs.deleted) != 0 || len(a.Queue.Items()) != 0 {

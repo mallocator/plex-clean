@@ -42,6 +42,7 @@ type Config struct {
 	ArchiveDir           string
 	AnimeArchiveDir      string // archive for Sonarr series of type anime; empty uses ArchiveDir
 	MovieArchiveDir      string // Radarr movies tagged MovieArchiveTag are moved here (movies.go); empty disables
+	MovieArchiveHostPath string // the same folder as Jellyfin sees it (version merging)
 	MovieArchiveTag      string
 	JellyfinURL          string
 	JellyfinAPIKey       string
@@ -208,6 +209,7 @@ func loadConfig() Config {
 		AnimeArchiveDir:      getEnv("ANIME_ARCHIVE_DIR", ""),
 		MovieArchiveDir:      getEnv("MOVIE_ARCHIVE_DIR", ""),
 		MovieArchiveTag:      getEnv("MOVIE_ARCHIVE_TAG", "archive"),
+		MovieArchiveHostPath: getEnv("MOVIE_ARCHIVE_HOST_PATH", "/volume1/Video/Movies"),
 		JellyfinURL:          strings.TrimRight(getEnv("JELLYFIN_URL", ""), "/"),
 		JellyfinAPIKey:       getEnv("JELLYFIN_API_KEY", ""),
 		JellyfinArchiveUsers: splitList(getEnv("JELLYFIN_ARCHIVE_USERS", "")),

@@ -82,8 +82,9 @@ func (a *App) apply(it PendingItem) (bool, error) {
 	if series.SeriesType == "anime" && a.Config.AnimeArchiveDir != "" {
 		archiveRoot = a.Config.AnimeArchiveDir
 	}
-	archiveDst := func(f string) string {
-		return filepath.Join(archiveRoot, filepath.Base(series.Path), fmt.Sprintf("Season %02d", it.Season), filepath.Base(f))
+	showDir := a.archiveShowDir(archiveRoot, series.TvdbID, filepath.Base(series.Path))
+	archiveDst := func(f string) string { // flat show folder, no quality suffix (archive_names.go)
+		return filepath.Join(showDir, archiveEpisodeName(filepath.Base(f)))
 	}
 	if ep == nil || !ep.HasFile || ep.EpisodeFileID == 0 {
 		// Sonarr knows the show but not this file: downloaded by a qBittorrent RSS rule (before the show moved

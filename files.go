@@ -135,7 +135,7 @@ func (a *App) applyByName(it PendingItem) (handled bool, err error) {
 		return false, nil
 	}
 	return true, a.applyToFiles(it, action, func(f string) string {
-		return filepath.Join(a.Config.ArchiveDir, archiveName, filepath.Base(f))
+		return filepath.Join(a.Config.ArchiveDir, archiveName, archiveEpisodeName(filepath.Base(f)))
 	})
 }
 

@@ -135,7 +135,7 @@ func TestArchiveCopiesThenDeletes(t *testing.T) {
 	a, fs := appWithSonarr(t)
 	watch(a, "Futurama", 11, 10, 30*time.Hour)
 	a.ProcessDue()
-	dst := filepath.Join(a.Config.ArchiveDir, "Futurama", "Season 11", "Futurama - S11E10.mkv")
+	dst := filepath.Join(a.Config.ArchiveDir, "Futurama", "Futurama - S11E10.mkv") // flat show folder
 	data, err := os.ReadFile(dst)
 	if err != nil || string(data) != "futurama!" {
 		t.Fatalf("archived copy: %q %v", data, err)

@@ -62,12 +62,12 @@ func TestArchiveMoviesMovesTaggedMovies(t *testing.T) {
 	}
 	a.Config.DryRun = false
 	a.ArchiveMovies()
-	for _, f := range []string{"Heat (1995) (Bluray-1080p).mkv", "Heat (1995) (Bluray-1080p).en.srt"} {
+	for _, f := range []string{"Heat (1995).mkv", "Heat (1995).en.srt"} { // archive names: no Radarr quality suffix
 		if _, err := os.Stat(filepath.Join(a.Config.MovieArchiveDir, f)); err != nil {
 			t.Errorf("%s not archived: %v", f, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(a.Config.MovieArchiveDir, "Heat (1995) (Bluray-1080p).nfo")); err == nil {
+	if _, err := os.Stat(filepath.Join(a.Config.MovieArchiveDir, "Heat (1995).nfo")); err == nil {
 		t.Error("only the movie and its subtitles go to the archive")
 	}
 	if strings.Join(deleted, ",") != "1" {
@@ -94,7 +94,7 @@ func TestArchiveNameClashCopiesNothing(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "Heat (1995).mkv")
 	os.WriteFile(src, []byte("new copy"), 0644)
 	os.WriteFile(filepath.Join(a.Config.MovieArchiveDir, "Heat (1995).mkv"), []byte("old"), 0644)
-	if err := a.copyToArchive([]string{src}); err == nil {
+	if err := a.copyToArchive([]string{src}, "Heat (1995)"); err == nil {
 		t.Error("a different file with the same name must not be overwritten")
 	}
 	if b, _ := os.ReadFile(filepath.Join(a.Config.MovieArchiveDir, "Heat (1995).mkv")); string(b) != "old" {

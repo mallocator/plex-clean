@@ -18,13 +18,15 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    Watching the same episode again, or in the other server, doesn't restart the clock.
 3. **Then the show's rule applies:**
    - Shows managed by **Sonarr** use tags: `delete-after-watch` deletes the episode file through Sonarr;
-     `archive` copies it to `ARCHIVE_DIR/<show>/Season NN/` first (`ANIME_ARCHIVE_DIR` for anime series). Both
+     `archive` copies it into the show's folder in `ARCHIVE_DIR` first (`ANIME_ARCHIVE_DIR` for anime series): flat, no
+     season folders, Sonarr's quality suffix dropped; the folder is the one Plex already has for the show's TVDB id,
+     else one with the same normalised name, else Sonarr's folder name. Both
      unmonitor the episode so Sonarr won't fetch it again. If Sonarr has no file for the episode (downloaded by an
      RSS rule before the show moved to Sonarr), the tag of a monitored show applies to the file found by name, as below
      (unmonitored shows, e.g. added by an import list, are left alone).
    - Shows **not in Sonarr** (e.g. downloaded by qBittorrent RSS rules) can be listed in `ARCHIVE_SHOWS` or
      `DELETE_SHOWS`. Their file is found in `SEARCH_DIRS` by release name (`Show.Name.S14E10...`, `1x10`);
-     archive moves it to `ARCHIVE_DIR/<show>/` keeping its name. These name rules also apply to a show Sonarr
+     archive moves it to `ARCHIVE_DIR/<show>/` keeping its name (minus a Sonarr quality suffix). These name rules also apply to a show Sonarr
      knows but has no file or tag for (e.g. added by an import list while an RSS rule downloads it).
    - Anything else is left alone.
 4. **Per-user folders**: Seerr tags each request with the requester (`2-daniela`). With `USER_FOLDERS`
@@ -55,9 +57,14 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    torrents, and over half of them, look deleted at once.
 8. **Movies into the archive**: a Radarr movie tagged `MOVIE_ARCHIVE_TAG` (default `archive`), or marked as favourite
    (♥) in Jellyfin by one of `JELLYFIN_ARCHIVE_USERS`, is copied with its
-   subtitles into `MOVIE_ARCHIVE_DIR` (e.g. the root of the movie archive, where the owner sorts it), then deleted in
-   Radarr with its download files and an import exclusion. A file of the same name but different size already in the
-   archive stops it (nothing is overwritten). Checked every `CHECK_INTERVAL`.
+   subtitles into `MOVIE_ARCHIVE_DIR` (one flat folder), then deleted in Radarr with its download files and an import
+   exclusion. Archive name: `Title (Year) [Label]…` with labels for the edition and a dubbed language (neither English
+   nor the original); a quality label (`[4K]`, `[1080p]`, `[720p]`, `[SD]`) only when that name already exists. A film
+   of a series the archive numbers (the Plex collection named like the TMDB collection, e.g. `Mission Impossible 7 -
+   Dead Reckoning (2023)`) continues the numbering when it's newer than all of them (`Mission Impossible 8 - The Final
+   Reckoning`). Another version of a film already in the archive is merged into one Jellyfin item once Jellyfin has
+   scanned it (`/Videos/MergeVersions`; Jellyfin groups versions by itself only in per-movie folders). A file of the
+   same name but different size stops it (nothing is overwritten). Checked every `CHECK_INTERVAL`.
 7. **Download health** (with the sweep): Sonarr/Radarr downloads that will never import are removed from qBittorrent
    through the app's queue, blocklisted, and searched again: fakes (an executable or archive instead of a video,
    nothing importable) and torrents without any data for `STALL_TIMEOUT`. At most `SWEEP_MAX_REMOVE` per run.
@@ -102,6 +109,7 @@ refused and logged.
 | `ARCHIVE_DIR` | `/archive` | Archive root |
 | `ANIME_ARCHIVE_DIR` | | Archive root for Sonarr series of type anime (default: `ARCHIVE_DIR`) |
 | `MOVIE_ARCHIVE_DIR`, `MOVIE_ARCHIVE_TAG` | , `archive` | Where Radarr movies tagged for the archive go; empty disables |
+| `MOVIE_ARCHIVE_HOST_PATH` | `/volume1/Video/Movies` | The movie archive as Jellyfin sees it (version merging) |
 | `JELLYFIN_URL`, `JELLYFIN_API_KEY`, `JELLYFIN_ARCHIVE_USERS` | | Jellyfin favourites of these users archive a movie like the tag |
 | `RADARR_URL`, `RADARR_API_KEY` | | Radarr for per-user movie folders |
 | `USER_FOLDERS` | | `2-daniela=/base,1-mallox=/base2` (Seerr tag labels; a plain name also routes but can't be created as a tag) |
