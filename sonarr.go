@@ -20,7 +20,7 @@ func NewArr(baseURL, apiKey string) *Arr {
 	return &Arr{BaseURL: baseURL, APIKey: apiKey, Client: &http.Client{Timeout: 30 * time.Second}}
 }
 
-// Sonarr adds the episode lookups plex-clean needs.
+// Sonarr adds the episode lookups curator needs.
 type Sonarr struct{ Arr }
 
 func (s *Sonarr) arr() *Arr { return &s.Arr }

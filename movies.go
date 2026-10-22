@@ -194,7 +194,7 @@ func (a *App) ArchiveMovies() {
 			a.pendingMerges[m.TmdbID] = a.now()
 			a.mergeMu.Unlock()
 		}
-		metrics.Inc("plexclean_actions_total", "action", "movie_archived")
+		metrics.Inc("curator_actions_total", "action", "movie_archived")
 	}
 }
 

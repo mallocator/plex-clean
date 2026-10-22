@@ -1,4 +1,5 @@
-// plex-clean applies house rules to media after it has been watched.
+// curator looks after a self-hosted media library (named plex-clean until v2.14): it cleans up and archives what
+// has been watched, keeps downloads healthy, searches for better releases and follows the owner's Simkl/Seerr lists.
 //
 // It receives "watched" events from Plex (media.scrobble webhooks) and Jellyfin (Webhook plugin,
 // PlaybackStop with PlayedToCompletion), writes a marker file per watched item, and queues episodes. A poll of both
@@ -97,7 +98,7 @@ type Config struct {
 }
 
 func main() {
-	// "plex-clean healthcheck" is the Docker healthcheck: the image has no shell or curl.
+	// "curator healthcheck" is the Docker healthcheck: the image has no shell or curl.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck(getInt("PORT", 3333)))
 	}
@@ -150,7 +151,7 @@ func main() {
 		go loopRetry(config.SimklInterval, 10*time.Minute, app.SimklSync)
 	}
 
-	log.Printf("plex-clean listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d, simkl %v, upgrades %v)",
+	log.Printf("curator listening on :%d (grace %s, dry run %v, sonarr %v, radarr %v, sweep %v, user folders %d, simkl %v, upgrades %v)",
 		config.Port, config.GracePeriod, config.DryRun, app.Sonarr != nil, app.Radarr != nil,
 		app.Qbt != nil && config.SweepInterval > 0, len(config.UserFolders), app.Simkl != nil, config.UpgradeInterval)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), app.Routes()))

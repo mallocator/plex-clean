@@ -9,7 +9,7 @@ import (
 )
 
 // Sweep removes completed torrents whose downloaded files are gone, e.g. after an episode was deleted
-// from Plex or Jellyfin. Paths are qBittorrent's own save paths, so plex-clean must mount the downloads
+// from Plex or Jellyfin. Paths are qBittorrent's own save paths, so curator must mount the downloads
 // share at the same path as the qBittorrent container (/downloads).
 func (a *App) Sweep() {
 	root := filepath.Clean(a.Config.SweepRoot)
@@ -78,6 +78,6 @@ func (a *App) Sweep() {
 			continue
 		}
 		log.Printf("Sweep: removed torrent %s (files deleted)", t.Name)
-		metrics.Inc("plexclean_actions_total", "action", "torrent_swept")
+		metrics.Inc("curator_actions_total", "action", "torrent_swept")
 	}
 }

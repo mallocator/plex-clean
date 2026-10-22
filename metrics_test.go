@@ -58,9 +58,9 @@ func TestCollectStreams(t *testing.T) {
 	metrics.Write(&b)
 	out := b.String()
 	for _, want := range []string{
-		`plexclean_streams{server="plex",kind="direct"} 2`, `plexclean_streams{server="plex",kind="transcode_hw"} 1`,
-		`plexclean_streams{server="jellyfin",kind="transcode_sw"} 1`, `plexclean_streams{server="jellyfin",kind="direct"} 1`,
-		`plexclean_streams{server="jellyfin",kind="transcode_hw"} 0`,
+		`curator_streams{server="plex",kind="direct"} 2`, `curator_streams{server="plex",kind="transcode_hw"} 1`,
+		`curator_streams{server="jellyfin",kind="transcode_sw"} 1`, `curator_streams{server="jellyfin",kind="direct"} 1`,
+		`curator_streams{server="jellyfin",kind="transcode_hw"} 0`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -89,8 +89,8 @@ func TestCollectArr(t *testing.T) {
 	metrics.Write(&b)
 	out := b.String()
 	for _, want := range []string{
-		`plexclean_arr_queue_items{app="sonarr",state="downloading"} 2`, `plexclean_arr_queue_items{app="sonarr",state="unknown"} 1`,
-		`plexclean_arr_missing{app="sonarr"} 7`, `plexclean_arr_library_bytes{app="sonarr"} 150`, `plexclean_arr_library_files{app="sonarr"} 3`,
+		`curator_arr_queue_items{app="sonarr",state="downloading"} 2`, `curator_arr_queue_items{app="sonarr",state="unknown"} 1`,
+		`curator_arr_missing{app="sonarr"} 7`, `curator_arr_library_bytes{app="sonarr"} 150`, `curator_arr_library_files{app="sonarr"} 3`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)

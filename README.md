@@ -1,6 +1,9 @@
-# plex-clean
+# curator
 
-House rules for media after it has been watched, plus torrent cleanup. A single Go binary with no dependencies.
+Looks after a self-hosted media library (Plex/Jellyfin, Sonarr/Radarr, qBittorrent, Seerr): house rules for
+media after it has been watched (delete or archive), download health, upgrade search, import quality checks and
+Simkl/Seerr list sync. A single Go binary with no dependencies. Named plex-clean until v2.14 (image
+`mallox/plex-clean`); metrics were renamed from `plexclean_*` to `curator_*` in v2.15.0.
 
 1. **Watched events** come from Plex webhooks (`media.scrobble`, needs Plex Pass) and the Jellyfin
    [Webhook plugin](https://github.com/jellyfin/jellyfin-plugin-webhook) (Playback Stop, played to completion).
@@ -8,11 +11,11 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    A "movie" whose title is a release name (`Show S17E01 ...`) counts as that episode: loose episode files in a
    download folder show up as movies in Jellyfin's mixed libraries.
    **Watched poll** (every `WATCHED_POLL_INTERVAL`): webhooks get lost (a client reports a wrong stop position, the
-   container restarts), so plex-clean also asks the servers which episodes are *marked* watched: every Jellyfin user,
+   container restarts), so curator also asks the servers which episodes are *marked* watched: every Jellyfin user,
    and the Plex owner account (other Plex accounts rely on the webhook). Marks since `WATCHED_LOOKBACK` it hasn't
    seen are queued with their watch time; an episode marked watched by hand counts too. A mark that is already older than `WATCHED_MAX_AGE` when it first appears was synced from the other server (WatchState copies the original date, and has copied wrong marks) and is only logged. Safeguards: the first run
    only records the current marks, and more than `WATCHED_BURST_MAX` new marks in one poll (a mass sync, e.g. by
-   WatchState) are logged as held instead of queued (`plexclean_watched_poll_held_total`). Known marks are kept in
+   WatchState) are logged as held instead of queued (`curator_watched_poll_held_total`). Known marks are kept in
    `WATCHED_SEEN_FILE`.
 2. **Episodes wait a grace period** (default 24 h) in a persistent queue, so you can rewatch or catch up.
    Watching the same episode again, or in the other server, doesn't restart the clock.
@@ -77,7 +80,7 @@ House rules for media after it has been watched, plus torrent cleanup. A single 
    block requests for new seasons. Skipped when Sonarr reports no series; at most 50 resets per run.
 
 9. **Upgrade search** (every `UPGRADE_INTERVAL`): Sonarr and Radarr only see new releases through RSS, and the sources
-   with the best ones (aggregators) have none. plex-clean searches for episodes aired and movies added/available within
+   with the best ones (aggregators) have none. curator searches for episodes aired and movies added/available within
    `UPGRADE_WINDOW` that are missing or below their profile's cutoff (format score or quality), and for older missing
    ones daily: every 30 min for the first 6 h, hourly until 2 days, then every 6 h. It grabs the app's first approved
    release (the app's own ranking). With no file and nothing approved after `UPGRADE_FALLBACK`, the requirement is
@@ -144,12 +147,12 @@ refused and logged.
 | `PROTECTED_DIRS` | | Never deleted in, besides the archive dirs |
 | `DEBUG` | `false` | Verbose logging |
 
-Paths must be the same inside plex-clean, Sonarr and qBittorrent (mount the downloads share at `/downloads`
+Paths must be the same inside curator, Sonarr and qBittorrent (mount the downloads share at `/downloads`
 everywhere), because Sonarr and qBittorrent report their own paths.
 
 ## Endpoints
 
-`plex-clean healthcheck` (as the Docker healthcheck command) checks the running server's `/healthz` and exits 0 or 1; the image has no shell or curl.
+`curator healthcheck` (as the Docker healthcheck command) checks the running server's `/healthz` and exits 0 or 1; the image has no shell or curl.
 
 
 - `POST /plex`: Plex webhook (Settings → Webhooks).
@@ -157,14 +160,14 @@ everywhere), because Sonarr and qBittorrent report their own paths.
 - `POST /`: either, detected by content type.
 - `POST /sonarr`, `POST /radarr`: Sonarr/Radarr Connect webhooks; trigger per-user routing.
 - `GET /pending`: the queue. `GET /healthz`: liveness.
-- `GET /metrics`: Prometheus metrics. Counters since start: `plexclean_watched_total{source}`,
-  `plexclean_actions_total{action}` (episode_deleted, episode_archived, file_deleted, file_archived, movie_archived,
-  torrent_swept, download_rejected with `reason` stalled/unusable, routed, tagged, seerr_reset), `plexclean_freed_bytes_total`.
-  Gauges refreshed every `STATS_INTERVAL` from the services plex-clean already uses: `plexclean_pending_items`,
-  `plexclean_qbittorrent_torrents{state}`, `plexclean_qbittorrent_speed_bytes{direction}`,
-  `plexclean_arr_queue_items{app,state}`, `plexclean_arr_missing{app}`, `plexclean_arr_library_bytes{app}`,
-  `plexclean_arr_library_files{app}`, `plexclean_streams{server,kind}` (Plex/Jellyfin sessions: direct, transcode_hw,
-  transcode_sw) and `plexclean_stats_last_success_timestamp_seconds{source}`.
+- `GET /metrics`: Prometheus metrics. Counters since start: `curator_watched_total{source}`,
+  `curator_actions_total{action}` (episode_deleted, episode_archived, file_deleted, file_archived, movie_archived,
+  torrent_swept, download_rejected with `reason` stalled/unusable, routed, tagged, seerr_reset), `curator_freed_bytes_total`.
+  Gauges refreshed every `STATS_INTERVAL` from the services curator already uses: `curator_pending_items`,
+  `curator_qbittorrent_torrents{state}`, `curator_qbittorrent_speed_bytes{direction}`,
+  `curator_arr_queue_items{app,state}`, `curator_arr_missing{app}`, `curator_arr_library_bytes{app}`,
+  `curator_arr_library_files{app}`, `curator_streams{server,kind}` (Plex/Jellyfin sessions: direct, transcode_hw,
+  transcode_sw) and `curator_stats_last_success_timestamp_seconds{source}`.
 
 ## Development
 
@@ -172,4 +175,4 @@ everywhere), because Sonarr and qBittorrent report their own paths.
 go test -race ./...
 ```
 
-Releases: pushing a `v*` tag builds and publishes `mallox/plex-clean` to Docker Hub.
+Releases: pushing a `v*` tag builds and publishes `mallox/curator` to Docker Hub.

@@ -189,7 +189,7 @@ func (a *App) CheckImports() {
 		mbm := f.mbPerMin()
 		app := strings.ToLower(f.App)
 		if mbm > 0 {
-			gauges[series("plexclean_recent_import_mb_per_minute", "app", app, "item", f.Name, "group", f.Group)] = mbm
+			gauges[series("curator_recent_import_mb_per_minute", "app", app, "item", f.Name, "group", f.Group)] = mbm
 			if a.Config.ImportMinMBPerMin > 0 && mbm < a.Config.ImportMinMBPerMin {
 				low[app]++
 			}
@@ -211,11 +211,11 @@ func (a *App) CheckImports() {
 		}
 	}
 	for k, v := range low {
-		gauges[series("plexclean_recent_imports_below_floor", "app", k)] = v
+		gauges[series("curator_recent_imports_below_floor", "app", k)] = v
 	}
 	for grp, v := range g.Groups {
 		if len(v) >= 3 {
-			gauges[series("plexclean_group_mb_per_minute", "group", grp)] = median(v)
+			gauges[series("curator_group_mb_per_minute", "group", grp)] = median(v)
 		}
 	}
 	metrics.SetGroup("imports", gauges)
@@ -273,7 +273,7 @@ func (a *App) flagMislabeled(app *Arr, f importFile) bool {
 	}
 	log.Printf("Imports (%s): %s is mislabeled (picture %s, released as %dp); marked failed: blocklisted, searching again",
 		f.App, f.Name, f.MediaInfo.Resolution, f.Resolution)
-	metrics.Inc("plexclean_actions_total", "action", "import_mislabeled", "reason", strings.ToLower(f.App))
+	metrics.Inc("curator_actions_total", "action", "import_mislabeled", "reason", strings.ToLower(f.App))
 	return true
 }
 

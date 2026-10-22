@@ -8,7 +8,7 @@ import (
 )
 
 // The archive (Video/Series, Video/Anime, Video/Movies) belongs to the owner: nothing automatic deletes or moves files
-// there. Every deletion plex-clean makes, directly or through Sonarr/Radarr/qBittorrent, first passes deletable: the
+// there. Every deletion curator makes, directly or through Sonarr/Radarr/qBittorrent, first passes deletable: the
 // path must be below one of DELETE_ROOTS (the downloads share) and outside the archive directories and PROTECTED_DIRS.
 func (a *App) deletable(path string) error {
 	p := filepath.Clean(path)
@@ -25,7 +25,7 @@ func (a *App) deletable(path string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s is outside %s, the only places plex-clean deletes in", p, strings.Join(a.Config.DeleteRoots, ", "))
+	return fmt.Errorf("%s is outside %s, the only places curator deletes in", p, strings.Join(a.Config.DeleteRoots, ", "))
 }
 
 func within(p, dir string) bool {

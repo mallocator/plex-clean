@@ -12,7 +12,7 @@ import (
 )
 
 // Prometheus metrics at /metrics, for the home monitoring stack (VictoriaMetrics/Grafana). Counters record what
-// plex-clean did since it started; gauges describe the media stack it already talks to and are refreshed every
+// curator did since it started; gauges describe the media stack it already talks to and are refreshed every
 // STATS_INTERVAL by CollectStats. Plain text exposition format, no client library.
 
 type metricSet struct {
@@ -104,36 +104,36 @@ func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func init() {
-	metrics.Help("plexclean_watched_total", "Finished viewings received, by source (plex, jellyfin).")
-	metrics.Help("plexclean_actions_total", "Actions taken: episode_deleted, episode_archived, file_deleted, file_archived, movie_archived, torrent_swept, download_rejected, download_rescanned, upgrade_grabbed (reason new, upgrade, fallback), import_mislabeled, routed, tagged.")
-	metrics.Help("plexclean_freed_bytes_total", "Bytes deleted from the downloads share.")
-	metrics.Help("plexclean_pending_items", "Watched episodes waiting for their grace period.")
-	metrics.Help("plexclean_qbittorrent_torrents", "Torrents by qBittorrent state.")
-	metrics.Help("plexclean_qbittorrent_speed_bytes", "Current qBittorrent transfer rate in bytes per second.")
-	metrics.Help("plexclean_arr_queue_items", "Items in the Sonarr/Radarr download queue by tracked state.")
-	metrics.Help("plexclean_arr_missing", "Monitored episodes/movies without a file (Sonarr/Radarr wanted list).")
-	metrics.Help("plexclean_arr_library_bytes", "Size on disk of everything Sonarr/Radarr manage.")
-	metrics.Help("plexclean_arr_library_files", "Episode files (Sonarr) or movies with a file (Radarr).")
-	metrics.Help("plexclean_streams", "Active playback sessions by server and kind (direct, transcode_hw, transcode_sw).")
-	metrics.Help("plexclean_upgrade_candidates", "Episodes/movies the upgrade search looks after (tracked) and those due for a search now (due).")
-	metrics.Help("plexclean_recent_import_mb_per_minute", "Size per minute of runtime of each file imported within the upgrade window.")
-	metrics.Help("plexclean_recent_imports_below_floor", "Recent imports under IMPORT_MIN_MB_PER_MIN, by app.")
-	metrics.Help("plexclean_group_mb_per_minute", "Median MB/min of a release group's last imports (groups with 3+ files).")
-	metrics.Help("plexclean_upgrade_searches_total", "Interactive searches the upgrade search ran, by app.")
-	metrics.Help("plexclean_stats_last_success_timestamp_seconds", "Unix time each stats source last answered.")
+	metrics.Help("curator_watched_total", "Finished viewings received, by source (plex, jellyfin).")
+	metrics.Help("curator_actions_total", "Actions taken: episode_deleted, episode_archived, file_deleted, file_archived, movie_archived, torrent_swept, download_rejected, download_rescanned, upgrade_grabbed (reason new, upgrade, fallback), import_mislabeled, routed, tagged.")
+	metrics.Help("curator_freed_bytes_total", "Bytes deleted from the downloads share.")
+	metrics.Help("curator_pending_items", "Watched episodes waiting for their grace period.")
+	metrics.Help("curator_qbittorrent_torrents", "Torrents by qBittorrent state.")
+	metrics.Help("curator_qbittorrent_speed_bytes", "Current qBittorrent transfer rate in bytes per second.")
+	metrics.Help("curator_arr_queue_items", "Items in the Sonarr/Radarr download queue by tracked state.")
+	metrics.Help("curator_arr_missing", "Monitored episodes/movies without a file (Sonarr/Radarr wanted list).")
+	metrics.Help("curator_arr_library_bytes", "Size on disk of everything Sonarr/Radarr manage.")
+	metrics.Help("curator_arr_library_files", "Episode files (Sonarr) or movies with a file (Radarr).")
+	metrics.Help("curator_streams", "Active playback sessions by server and kind (direct, transcode_hw, transcode_sw).")
+	metrics.Help("curator_upgrade_candidates", "Episodes/movies the upgrade search looks after (tracked) and those due for a search now (due).")
+	metrics.Help("curator_recent_import_mb_per_minute", "Size per minute of runtime of each file imported within the upgrade window.")
+	metrics.Help("curator_recent_imports_below_floor", "Recent imports under IMPORT_MIN_MB_PER_MIN, by app.")
+	metrics.Help("curator_group_mb_per_minute", "Median MB/min of a release group's last imports (groups with 3+ files).")
+	metrics.Help("curator_upgrade_searches_total", "Interactive searches the upgrade search ran, by app.")
+	metrics.Help("curator_stats_last_success_timestamp_seconds", "Unix time each stats source last answered.")
 }
 
 // CollectStats refreshes the gauges. Each source is independent: one failing doesn't hide the others.
 func (a *App) CollectStats() {
 	now := float64(a.now().Unix())
 	ok := map[string]float64{}
-	metrics.SetGroup("queue", map[string]float64{series("plexclean_pending_items"): float64(len(a.Queue.Items()))})
+	metrics.SetGroup("queue", map[string]float64{series("curator_pending_items"): float64(len(a.Queue.Items()))})
 
 	if a.Qbt != nil {
 		if err := a.collectQbt(); err != nil {
 			log.Printf("Stats: %v", err)
 		} else {
-			ok[series("plexclean_stats_last_success_timestamp_seconds", "source", "qbittorrent")] = now
+			ok[series("curator_stats_last_success_timestamp_seconds", "source", "qbittorrent")] = now
 		}
 	}
 	apps := map[string]*Arr{}
@@ -147,21 +147,21 @@ func (a *App) CollectStats() {
 		if err := collectArr(name, app); err != nil {
 			log.Printf("Stats (%s): %v", name, err)
 		} else {
-			ok[series("plexclean_stats_last_success_timestamp_seconds", "source", name)] = now
+			ok[series("curator_stats_last_success_timestamp_seconds", "source", name)] = now
 		}
 	}
 	if a.Plex != nil {
 		if err := a.collectPlexStreams(); err != nil {
 			log.Printf("Stats: %v", err)
 		} else {
-			ok[series("plexclean_stats_last_success_timestamp_seconds", "source", "plex")] = now
+			ok[series("curator_stats_last_success_timestamp_seconds", "source", "plex")] = now
 		}
 	}
 	if a.Jellyfin != nil {
 		if err := a.collectJellyfinStreams(); err != nil {
 			log.Printf("Stats: %v", err)
 		} else {
-			ok[series("plexclean_stats_last_success_timestamp_seconds", "source", "jellyfin")] = now
+			ok[series("curator_stats_last_success_timestamp_seconds", "source", "jellyfin")] = now
 		}
 	}
 	metrics.mu.Lock()
@@ -185,7 +185,7 @@ func (a *App) collectQbt() error {
 	}
 	states := map[string]float64{}
 	for _, t := range torrents {
-		states[series("plexclean_qbittorrent_torrents", "state", t.State)]++
+		states[series("curator_qbittorrent_torrents", "state", t.State)]++
 	}
 	metrics.SetGroup("qbt_torrents", states)
 	var info struct {
@@ -196,8 +196,8 @@ func (a *App) collectQbt() error {
 		return err
 	}
 	metrics.SetGroup("qbt_speed", map[string]float64{
-		series("plexclean_qbittorrent_speed_bytes", "direction", "down"): float64(info.Down),
-		series("plexclean_qbittorrent_speed_bytes", "direction", "up"):   float64(info.Up),
+		series("curator_qbittorrent_speed_bytes", "direction", "down"): float64(info.Down),
+		series("curator_qbittorrent_speed_bytes", "direction", "up"):   float64(info.Up),
 	})
 	return nil
 }
@@ -213,7 +213,7 @@ func collectArr(name string, app *Arr) error {
 		if state == "" {
 			state = "unknown"
 		}
-		queue[series("plexclean_arr_queue_items", "app", name, "state", state)]++
+		queue[series("curator_arr_queue_items", "app", name, "state", state)]++
 	}
 	metrics.SetGroup(name+"_queue", queue)
 
@@ -254,9 +254,9 @@ func collectArr(name string, app *Arr) error {
 		}
 	}
 	metrics.SetGroup(name+"_library", map[string]float64{
-		series("plexclean_arr_missing", "app", name):       float64(missing.Total),
-		series("plexclean_arr_library_bytes", "app", name): size,
-		series("plexclean_arr_library_files", "app", name): files,
+		series("curator_arr_missing", "app", name):       float64(missing.Total),
+		series("curator_arr_library_bytes", "app", name): size,
+		series("curator_arr_library_files", "app", name): files,
 	})
 	return nil
 }
@@ -265,7 +265,7 @@ func collectArr(name string, app *Arr) error {
 func streamKinds(server string) map[string]float64 {
 	m := map[string]float64{}
 	for _, k := range []string{"direct", "transcode_hw", "transcode_sw"} {
-		m[series("plexclean_streams", "server", server, "kind", k)] = 0
+		m[series("curator_streams", "server", server, "kind", k)] = 0
 	}
 	return m
 }
@@ -293,7 +293,7 @@ func (a *App) collectPlexStreams() error {
 				kind = "transcode_hw"
 			}
 		}
-		m[series("plexclean_streams", "server", "plex", "kind", kind)]++
+		m[series("curator_streams", "server", "plex", "kind", kind)]++
 	}
 	metrics.SetGroup("plex_streams", m)
 	return nil
@@ -327,7 +327,7 @@ func (a *App) collectJellyfinStreams() error {
 				kind = "transcode_hw"
 			}
 		}
-		m[series("plexclean_streams", "server", "jellyfin", "kind", kind)]++
+		m[series("curator_streams", "server", "jellyfin", "kind", kind)]++
 	}
 	metrics.SetGroup("jellyfin_streams", m)
 	return nil

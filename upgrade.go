@@ -16,12 +16,12 @@ import (
 )
 
 // Upgrade search: Sonarr and Radarr only see new releases through RSS, and the sources with the best releases
-// (aggregators like Knaben) have none. So plex-clean searches for new episodes and movies itself, on a schedule that
+// (aggregators like Knaben) have none. So curator searches for new episodes and movies itself, on a schedule that
 // follows release patterns, and uses what it knows that the apps don't (what was watched, what is playing):
 //   - candidates: episodes aired and movies added/available within UPGRADE_WINDOW that are missing or whose file is
 //     below the profile's cutoff (format score or quality), plus older missing ones (searched daily);
 //   - searched every 30 min for the first 6 h, hourly until 2 days, every 6 h until UPGRADE_WINDOW;
-//   - the app decides: plex-clean grabs the first approved release of an interactive search (the app's own order);
+//   - the app decides: curator grabs the first approved release of an interactive search (the app's own order);
 //   - fallback: with no file and nothing approved after UPGRADE_FALLBACK, the best release rejected only for the size
 //     floor is grabbed, else the best 720p one. Upgrades continue after that until the window ends;
 //   - watched items (grace queue, Jellyfin played marks) and files being played are skipped; at most
@@ -271,8 +271,8 @@ func (a *App) UpgradeSearch() {
 	// newest first: they are what's about to be watched, and their releases change fastest
 	sort.SliceStable(due, func(i, j int) bool { return due[i].Since.After(due[j].Since) })
 	metrics.SetGroup("upgrades", map[string]float64{
-		series("plexclean_upgrade_candidates", "state", "tracked"): float64(len(items)),
-		series("plexclean_upgrade_candidates", "state", "due"):     float64(len(due)),
+		series("curator_upgrade_candidates", "state", "tracked"): float64(len(items)),
+		series("curator_upgrade_candidates", "state", "due"):     float64(len(due)),
 	})
 	a.debugf("Upgrades: %d tracked, %d due", len(items), len(due))
 	for i, it := range due {
@@ -297,7 +297,7 @@ func later(a, b time.Time) time.Time {
 
 // upgradeOne searches for one item and grabs what the app approves, or the fallback.
 func (a *App) upgradeOne(app *Arr, it upgradeItem, fallback bool) {
-	metrics.Inc("plexclean_upgrade_searches_total", "app", strings.ToLower(it.App))
+	metrics.Inc("curator_upgrade_searches_total", "app", strings.ToLower(it.App))
 	rs, err := app.Releases(it.Query)
 	if err != nil {
 		log.Printf("Upgrades (%s): searching %s: %v", it.App, it.Name, err)
@@ -349,7 +349,7 @@ func (a *App) upgradeOne(app *Arr, it upgradeItem, fallback bool) {
 	}
 	log.Printf("Upgrades (%s): grabbed %s for %s (%s -> score %d, %s, %d MB, %s)", it.App, pick.Title, it.Name, it.state(),
 		pick.CustomFormatScore, pick.Quality.Quality.Name, pick.Size>>20, pick.Indexer)
-	metrics.Inc("plexclean_actions_total", "action", "upgrade_grabbed", "reason", reason)
+	metrics.Inc("curator_actions_total", "action", "upgrade_grabbed", "reason", reason)
 }
 
 type sonarrCalendarEpisode struct {

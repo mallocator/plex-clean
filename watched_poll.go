@@ -57,7 +57,7 @@ func (a *App) WatchedPoll() {
 	for _, w := range stale {
 		log.Printf("Watched poll: ignoring %s: marked %s ago, probably synced from the other server", w, a.now().Sub(w.At).Round(time.Minute))
 	}
-	metrics.Add("plexclean_watched_poll_stale_total", float64(len(stale)))
+	metrics.Add("curator_watched_poll_stale_total", float64(len(stale)))
 	seen.Prune(since.Add(-24 * time.Hour))
 	if err := seen.Save(); err != nil {
 		log.Printf("Watched poll: saving %s: %v", seen.path, err)
@@ -71,7 +71,7 @@ func (a *App) WatchedPoll() {
 		for _, w := range fresh {
 			log.Printf("  held: %s", w)
 		}
-		metrics.Add("plexclean_watched_poll_held_total", float64(len(fresh)))
+		metrics.Add("curator_watched_poll_held_total", float64(len(fresh)))
 		return
 	}
 	for _, w := range fresh {

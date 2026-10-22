@@ -168,8 +168,8 @@ func (a *App) applyToFiles(it PendingItem, action string, archiveDst func(string
 				return err
 			}
 			log.Printf("%s: moved %s to %s", it, f, dst)
-			metrics.Inc("plexclean_actions_total", "action", "file_archived")
-			metrics.Add("plexclean_freed_bytes_total", float64(st.Size()))
+			metrics.Inc("curator_actions_total", "action", "file_archived")
+			metrics.Add("curator_freed_bytes_total", float64(st.Size()))
 		} else {
 			if a.Config.DryRun {
 				log.Printf("[dry run] %s: would delete %s", it, f)
@@ -183,8 +183,8 @@ func (a *App) applyToFiles(it PendingItem, action string, archiveDst func(string
 				return err
 			}
 			log.Printf("%s: deleted %s", it, f)
-			metrics.Inc("plexclean_actions_total", "action", "file_deleted")
-			metrics.Add("plexclean_freed_bytes_total", float64(size))
+			metrics.Inc("curator_actions_total", "action", "file_deleted")
+			metrics.Add("curator_freed_bytes_total", float64(size))
 		}
 	}
 	return nil

@@ -9,7 +9,7 @@ import (
 )
 
 // ruleMemory remembers which movies the cinema and collection rules already handled, so each rule acts once per
-// movie: when the owner re-monitors a movie in Radarr or deletes its exclusion, plex-clean leaves it that way.
+// movie: when the owner re-monitors a movie in Radarr or deletes its exclusion, curator leaves it that way.
 type ruleMemory struct {
 	Unmonitored map[int]string `json:"unmonitored"` // tmdb -> when and why
 	Excluded    map[int]string `json:"excluded"`

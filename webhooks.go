@@ -211,7 +211,7 @@ func (a *App) Watched(e WatchEvent) { a.watchedAt(e, a.now()) }
 
 // watchedAt is Watched for a viewing at a known time (the poll): the grace period counts from then.
 func (a *App) watchedAt(e WatchEvent, at time.Time) {
-	metrics.Inc("plexclean_watched_total", "source", e.Source)
+	metrics.Inc("curator_watched_total", "source", e.Source)
 	a.writeMarker(e)
 	if e.Type == "episode" {
 		if a.Queue.Add(e, at) {

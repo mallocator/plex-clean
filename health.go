@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Download health: Sonarr and Radarr leave broken downloads in their queue forever. Every sweep, plex-clean
+// Download health: Sonarr and Radarr leave broken downloads in their queue forever. Every sweep, curator
 // removes them from qBittorrent through the app's queue, blocklists the release and lets the app search again:
 //   - fakes and unusable downloads: an executable or an archive instead of a video, or nothing importable;
 //   - stalled downloads: no data (or no metadata) for STALL_TIMEOUT.
@@ -207,7 +207,7 @@ func (a *App) CheckDownloads() {
 				}
 				removed++
 				log.Printf("Downloads (%s): %s was already moved out of %s (import failed halfway); rescanned, removed without blocklisting", name, q.Title, q.OutputPath)
-				metrics.Inc("plexclean_actions_total", "action", "download_rescanned", "reason", "moved")
+				metrics.Inc("curator_actions_total", "action", "download_rescanned", "reason", "moved")
 				continue
 			}
 			if err := app.Reject(q.ID); err != nil {
@@ -220,7 +220,7 @@ func (a *App) CheckDownloads() {
 			if strings.HasPrefix(reason, "stalled") {
 				kind = "stalled"
 			}
-			metrics.Inc("plexclean_actions_total", "action", "download_rejected", "reason", kind)
+			metrics.Inc("curator_actions_total", "action", "download_rejected", "reason", kind)
 		}
 	}
 }

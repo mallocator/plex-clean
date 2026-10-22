@@ -21,7 +21,7 @@ jobs:
         goos: [linux, windows, darwin]
         goarch: [amd64, arm64]
     env:
-      BIN_NAME: plex-clean
+      BIN_NAME: curator
     steps:
       - uses: actions/checkout@v3
 
@@ -54,8 +54,8 @@ jobs:
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: plex-clean-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: plex-clean-${{ matrix.goos }}-${{ matrix.goarch }}*
+          name: curator-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: curator-${{ matrix.goos }}-${{ matrix.goarch }}*
 
   finalize:
     needs: release
@@ -71,7 +71,7 @@ jobs:
       - name: Create binaries directory and move all binaries there
         run: |
           mkdir -p ./dist/binaries
-          find ./dist -mindepth 2 -type f -name "plex-clean-*" -exec mv {} ./dist/binaries/ \;
+          find ./dist -mindepth 2 -type f -name "curator-*" -exec mv {} ./dist/binaries/ \;
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
@@ -101,7 +101,7 @@ jobs:
           context: .
           push: true
           tags: |
-            mallox/plex-clean:latest
-            mallox/plex-clean:${{ github.ref_name }}
+            mallox/curator:latest
+            mallox/curator:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

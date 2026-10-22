@@ -8,7 +8,7 @@ import (
 )
 
 func TestArchiveIsNeverDeleted(t *testing.T) {
-	// Sonarr reports a file inside a protected (archive) folder: plex-clean must not delete it.
+	// Sonarr reports a file inside a protected (archive) folder: curator must not delete it.
 	a, fs := appWithSonarr(t)
 	path := fs.files[11].Path
 	a.Config.ProtectedDirs = []string{filepath.Dir(filepath.Dir(filepath.Dir(path)))}

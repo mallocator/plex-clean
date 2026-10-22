@@ -71,7 +71,7 @@ func (a *App) SeerrReconcile() {
 			continue
 		}
 		reset++
-		metrics.Inc("plexclean_actions_total", "action", "seerr_reset")
+		metrics.Inc("curator_actions_total", "action", "seerr_reset")
 		log.Printf("Seerr reconcile: reset TMDB %d (record %d): it was processing although the series is no longer in Sonarr and nobody requested it", m.TMDB, m.ID)
 	}
 }
